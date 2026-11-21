@@ -43,7 +43,8 @@ test('не помню: слово возвращается через 3, 7 и 15
   const x = S.current(s);
   ({ s, progress: p } = swipeForgot(s, p));
   assert.equal(s.queue.indexOf(x), 3, 'через 3 карточки');
-  assert.equal(s.done, 0, 'забытое не засчитано');
+  assert.equal(s.done, 1, 'смахивание засчитано');
+  assert.equal(s.total, 12 + 3, 'забытое добавило три будущих повтора');
   assert.equal(p[x].lvl, 0);
   // три других слова - вспомнил
   for (let i = 0; i < 3; i++) ({ s, progress: p } = swipeKnown(s, p));
@@ -79,7 +80,7 @@ test('если в занятии одно слово, забытое показ�
   assert.deepEqual(s.queue, [K('a')]);
   for (let i = 0; i < 3; i++) ({ s, progress: p } = swipeKnown(s, p));
   assert.ok(S.isFinished(s));
-  assert.equal(s.done, 1);
+  assert.equal(s.done, 4, 'четыре смахивания: забыл и три раза вспомнил');
 });
 
 test('интервалы растут: 1, 3, 7, 16, 35, 80, 180 дней и дальше не растут', () => {
@@ -217,4 +218,20 @@ test('сколько осталось на сегодня', () => {
   assert.equal(S.remainingToday(mk('a', 'b', 'c'), p, T0), 2);
   assert.equal(S.hasNew(mk('a', 'b'), p), false);
   assert.equal(S.hasNew(mk('a', 'c'), p), true);
+});
+
+test('счетчик растет на каждом смахивании, даже когда идут слова на доучивании', () => {
+  const cards = Array.from({ length: 20 }, (_, i) => ({ ru: 'r' + i, en: 'e' + i, ipa: '', read: '' }));
+  let s = S.buildSession(cards, {}, T0, noShuffle);
+  let p = {};
+  for (let i = 0; i < 6; i++) ({ s, progress: p } = swipeForgot(s, p)); // забыл шесть подряд
+  let prev = s.done;
+  while (!S.isFinished(s)) {
+    ({ s, progress: p } = swipeKnown(s, p));
+    assert.equal(s.done, prev + 1);
+    assert.ok(s.done <= s.total);
+    prev = s.done;
+  }
+  assert.equal(s.total, s.done, 'в конце счетчик сошелся: N / N');
+  assert.ok(s.done > 20, 'забытые слова добавили повторы');
 });

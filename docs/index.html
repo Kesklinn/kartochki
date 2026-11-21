@@ -186,7 +186,17 @@ function buildSession(cards, progress, now, rng = Math.random, practice = false,
   // Слова этого списка, которые сегодня уже отвечены (здесь или в другом списке), сразу
   // считаем пройденными: счетчик показывает весь сегодняшний объем, а не только остаток.
   const doneToday = practice ? 0 : keys.filter((k) => answeredToday(progress[k], now)).length;
-  return { day: dayOf(now), practice, queue, steps: {}, total: queue.length + doneToday, done: doneToday, flipped: false, ipaShown: false, revealed: false };
+  return withTotal({ day: dayOf(now), practice, queue, steps: {}, total: 0, done: doneToday, flipped: false, ipaShown: false, revealed: false });
+}
+
+// Счетчик занятия считает каждое смахивание: done - сколько карточек уже пролистано,
+// total - done плюс все, что еще предстоит: карточки в очереди и будущие повторы
+// забытых слов (у слова на шаге i осталось еще STEPS.length - 1 - i возвратов).
+// Забыл слово - total вырастает на число шагов доучивания, но первое число не стоит на месте.
+function withTotal(s) {
+  let extra = 0;
+  for (const k of Object.keys(s.steps)) if (s.queue.includes(k)) extra += STEPS.length - 1 - s.steps[k];
+  return { ...s, total: s.done + s.queue.length + extra };
 }
 
 const current = (s) => (s.queue.length ? s.queue[0] : null);
@@ -217,13 +227,13 @@ function swipe(s, progress, now) {
   const finish = (rec) => {
     if (rec) next[key] = { ...rec, last: now };
     delete steps[key];
-    return { s: { ...s, ...base, queue: rest, steps, done: s.done + 1 }, progress: next };
+    return { s: withTotal({ ...s, ...base, queue: rest, steps, done: s.done + 1 }), progress: next };
   };
   const requeue = (stepIdx) => {
     steps[key] = stepIdx;
     const q = rest.slice();
     q.splice(Math.min(q.length, STEPS[stepIdx]), 0, key);
-    return { s: { ...s, ...base, queue: q, steps }, progress: next };
+    return { s: withTotal({ ...s, ...base, queue: q, steps, done: s.done + 1 }), progress: next };
   };
 
   if (!remembered) {
@@ -259,16 +269,15 @@ function merge(s, cards, progress, now) {
   const steps = {};
   for (const k of Object.keys(s.steps)) if (has.has(k)) steps[k] = s.steps[k];
   const sameFront = queue[0] === s.queue[0];
-  return {
+  return withTotal({
     ...s,
     queue: [...queue, ...added],
     steps,
     done: s.done + handled.length,
-    total: Math.max(s.done + handled.length + queue.length + added.length, s.total - removed + added.length),
     flipped: sameFront && s.flipped,
     ipaShown: sameFront && s.ipaShown,
     revealed: sameFront && s.revealed,
-  };
+  });
 }
 
 // Нужно ли собрать занятие заново (наступил новый день, а занятие закончено или вчерашнее).
@@ -315,7 +324,7 @@ function restore(raw) {
     if (!o || o.v !== 4 || !Array.isArray(o.queue) || typeof o.day !== 'string') return null;
     if (!o.queue.every((k) => typeof k === 'string') || new Set(o.queue).size !== o.queue.length) return null;
     const steps = o.steps && typeof o.steps === 'object' ? o.steps : {};
-    return { day: o.day, practice: !!o.practice, queue: o.queue, steps, total: o.total | 0, done: o.done | 0, flipped: false, ipaShown: false, revealed: false };
+    return withTotal({ day: o.day, practice: !!o.practice, queue: o.queue, steps, total: 0, done: o.done | 0, flipped: false, ipaShown: false, revealed: false });
   } catch {
     return null;
   }

@@ -106,15 +106,17 @@ test('смахнул, не переворачивая = помню: слово �
   assert.equal(Math.round((p[k].due - T0) / S.DAY), 3, 'через 3 дня');
 });
 
-test('перевернул и смахнул = не помню: слово вернется через 3 карточки, счетчик не растет', async () => {
+test('перевернул и смахнул = не помню: слово вернется через 3 карточки, к плану добавятся 3 повтора', async () => {
   const { $, word, swipe, d } = await open({ storage: startWith(5) });
   d.querySelector('.card').click(); // посмотрел ответ
   await swipe();
-  assert.equal($('counter').textContent, '1 / 24');
+  assert.equal($('counter').textContent, '2 / 27', 'к плану добавились 3 повтора');
   assert.equal($('face').dataset.side, 'ru', 'следующая карточка русской стороной');
   for (let i = 0; i < 3; i++) await swipe();
   assert.equal(word(), 'невероятно');
-  assert.equal($('counter').textContent, '4 / 24');
+  assert.equal($('counter').textContent, '5 / 27');
+  await swipe(); // вспомнил на первом шаге - счетчик все равно растет
+  assert.equal($('counter').textContent, '6 / 27');
 });
 
 test('click после жеста карточку не переворачивает', async () => {
