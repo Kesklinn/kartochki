@@ -199,3 +199,49 @@ test('тема всегда темная', () => {
   assert.match(html, /color-scheme:dark}/);
   assert.doesNotMatch(html, /prefers-color-scheme/);
 });
+
+test('при возвращении в приложение слова подтягиваются заново, без перезагрузки', async () => {
+  let csv = '"Русский","Английский","Транскрипция","Чтение","Список"\n"очередь","queue","","","A"\n';
+  const dom = new JSDOM(html, {
+    runScripts: 'dangerously', url: 'https://example.test/',
+    beforeParse(win) {
+      win.fetch = async () => ({ ok: true, status: 200, text: async () => csv });
+      let vis = 'visible';
+      Object.defineProperty(win.document, 'visibilityState', { get: () => vis });
+      win.__setVis = (v) => { vis = v; };
+      win.__now = 1e12;
+      win.Date.now = () => win.__now;
+    },
+  });
+  const w = dom.window, d = w.document;
+  await w.flashcardsReady;
+  assert.equal(d.getElementById('counter').textContent, '1 / 1');
+  // в таблицу добавили слово, приложение свернули и через минуту открыли снова
+  csv += '"дверь","door","","","A"\n';
+  w.__setVis('hidden'); d.dispatchEvent(new w.Event('visibilitychange'));
+  w.__now += 60000;
+  w.__setVis('visible'); d.dispatchEvent(new w.Event('visibilitychange'));
+  await w.flashcardsReady;
+  assert.equal(d.getElementById('counter').textContent, '1 / 2');
+});
+
+test('частые переключения не дергают таблицу чаще раза в 20 секунд', async () => {
+  let calls = 0;
+  const dom = new JSDOM(html, {
+    runScripts: 'dangerously', url: 'https://example.test/',
+    beforeParse(win) {
+      win.fetch = async () => { calls++; return { ok: true, status: 200, text: async () => '"Русский","Английский"\n"тихо","quietly"\n' }; };
+      Object.defineProperty(win.document, 'visibilityState', { get: () => 'visible' });
+      win.__now = 1e12;
+      win.Date.now = () => win.__now;
+    },
+  });
+  const w = dom.window;
+  await w.flashcardsReady;
+  for (let i = 0; i < 5; i++) { w.__now += 1000; w.document.dispatchEvent(new w.Event('visibilitychange')); }
+  await w.flashcardsReady;
+  assert.equal(calls, 1);
+  w.__now += 30000; w.document.dispatchEvent(new w.Event('visibilitychange'));
+  await w.flashcardsReady;
+  assert.equal(calls, 2);
+});

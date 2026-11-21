@@ -477,8 +477,23 @@ const CARDS = [
       setStatus(navigator.onLine === false ? '' : 'Не удалось обновить слова из таблицы');
     }
   }
-  window.flashcardsReady = refresh();
-  window.addEventListener('online', refresh);
+  // Установленное приложение Android не перезагружает страницу, когда его снова
+  // открывают из фона, поэтому слова подтягиваем и при каждом возвращении в приложение
+  // (не чаще раза в 20 секунд, чтобы не дергать таблицу при быстрых переключениях).
+  const MIN_GAP = 20000;
+  let lastRefresh = 0;
+  function refreshIfStale() {
+    if (Date.now() - lastRefresh < MIN_GAP) return lastRefresh && window.flashcardsReady;
+    lastRefresh = Date.now();
+    window.flashcardsReady = refresh();
+    return window.flashcardsReady;
+  }
+  refreshIfStale();
+  window.addEventListener('online', () => { lastRefresh = 0; refreshIfStale(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') refreshIfStale();
+  });
+  window.addEventListener('pageshow', (e) => { if (e.persisted) refreshIfStale(); });
 
   if ('serviceWorker' in navigator && window.isSecureContext && /^https?:/.test(location.protocol)) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
