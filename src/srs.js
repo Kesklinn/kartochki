@@ -10,13 +10,16 @@
 //   не вспомнил                         -> lvl 0 и доучивание прямо сейчас (см. ниже),
 //                                          после доучивания - снова завтра.
 // Короткая память (в течение занятия): забытое слово возвращается через 3 карточки,
-//   потом, если вспомнил, еще раз через 7 карточек - растущие промежутки закрепляют лучше,
+//   потом, если вспомнил, через 7 и через 15 - растущие промежутки закрепляют лучше,
 //   чем повтор подряд. Забыл на любом шаге - шаги начинаются сначала.
+// Когда слова по расписанию на сегодня кончились, занятие не обрывается: идет тренировка
+//   (practice) - сначала самые трудные слова. Раньше срока расписание она не сдвигает,
+//   а забытое в ней слово уходит на доучивание, как обычно.
 
 const DAY = 24 * 60 * 60 * 1000;
 const INTERVALS = [0, 1, 3, 7, 16, 35, 80, 180]; // дней для lvl 1..7
 const MAX_LVL = INTERVALS.length - 1;
-const STEPS = [3, 7]; // через сколько карточек показать забытое слово снова
+const STEPS = [3, 7, 15]; // через сколько карточек показать забытое слово снова (закрепляем трижды)
 
 function keyOf(card) {
   return card.en.trim().toLowerCase() + '|' + card.ru.trim().toLowerCase();
@@ -55,13 +58,26 @@ const isDue = (p, now) => Boolean(p) && p.due <= endOfDay(now);
 // Слово сегодня уже отвечено и до следующего повторения не нужно.
 const answeredToday = (p, now) => Boolean(p) && Boolean(p.last) && dayOf(p.last) === dayOf(now) && !isDue(p, now);
 
+// Насколько слово трудное: чем меньше уровень, чем чаще забывали и чем ближе срок -
+// тем раньше оно в тренировке. Новые слова (без истории) - как самые трудные.
+function difficultyOrder(keys, progress, now, rng = Math.random) {
+  const score = (k) => {
+    const p = progress[k];
+    if (!p) return -1e9;
+    return p.lvl * 100 - (p.lapses || 0) * 40 + Math.max(0, (p.due - now) / DAY);
+  };
+  return shuffle(keys, rng).sort((a, b) => score(a) - score(b)); // shuffle - случайный порядок среди равных
+}
+
 // Занятие на сегодня: сначала слова, срок которых подошел (самые просроченные первыми),
-// потом новые в случайном порядке. В режиме practice - все слова списка.
-function buildSession(cards, progress, now, rng = Math.random, practice = false) {
+// потом новые в случайном порядке. В режиме practice - все слова списка, трудные первыми;
+// avoid - слово, которое только что было, чтобы оно не шло два раза подряд.
+function buildSession(cards, progress, now, rng = Math.random, practice = false, avoid = null) {
   const keys = uniqueKeys(cards);
   let queue;
   if (practice) {
-    queue = shuffle(keys, rng);
+    queue = difficultyOrder(keys, progress, now, rng);
+    if (queue.length > 1 && queue[0] === avoid) [queue[0], queue[1]] = [queue[1], queue[0]];
   } else {
     const due = keys.filter((k) => isDue(progress[k], now)).sort((a, b) => progress[a].due - progress[b].due);
     const fresh = shuffle(keys.filter((k) => !progress[k]), rng);
@@ -160,6 +176,15 @@ function isStale(s, now) {
   return !s || s.day !== dayOf(now);
 }
 
+// Сколько слов списка еще ждут сегодня (по расписанию или новые).
+function remainingToday(cards, progress, now) {
+  return uniqueKeys(cards).filter((k) => !progress[k] || isDue(progress[k], now)).length;
+}
+
+function hasNew(cards, progress) {
+  return uniqueKeys(cards).some((k) => !progress[k]);
+}
+
 function learnedCount(cards, progress) {
   return uniqueKeys(cards).filter((k) => progress[k] && progress[k].lvl >= 1).length;
 }
@@ -214,7 +239,7 @@ function restoreProgress(raw) {
 }
 
 const Srs = {
-  DAY, INTERVALS, STEPS, keyOf, hasIpa, dayOf, shuffle, buildSession, current, isFinished, flip, toggleIpa,
+  DAY, INTERVALS, STEPS, keyOf, difficultyOrder, remainingToday, hasNew, hasIpa, dayOf, shuffle, buildSession, current, isFinished, flip, toggleIpa,
   swipe, merge, isStale, learnedCount, dueCount, nextDue, serialize, restore, restoreProgress,
 };
 if (typeof module !== 'undefined') module.exports = Srs;

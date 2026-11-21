@@ -49,6 +49,16 @@
     state = prev && !Srs.isStale(prev, now())
       ? Srs.merge(prev, subset, progress, now())
       : Srs.buildSession(subset, progress, now(), Math.random, practice);
+    keepGoing();
+  }
+
+  // Стоп-экрана нет: как только слова по расписанию на сегодня кончились, сразу идет
+  // тренировка - сначала самые трудные слова, круг за кругом. avoid - только что
+  // отвеченное слово, чтобы оно не пошло второй раз подряд.
+  function keepGoing(avoid = null) {
+    if (!Srs.isFinished(state)) return;
+    const subset = Lists.cardsFor(cards, listName);
+    if (subset.length) state = Srs.buildSession(subset, progress, now(), Math.random, true, avoid);
   }
   openList(listName);
 
@@ -85,23 +95,6 @@
     }
   }
 
-  function daysWord(n) {
-    const a = n % 10, b = n % 100;
-    if (a === 1 && b !== 11) return 'день';
-    if (a >= 2 && a <= 4 && (b < 10 || b >= 20)) return 'дня';
-    return 'дней';
-  }
-
-  // Подпись на экране "на сегодня все": когда следующее повторение этого списка.
-  function whenNext() {
-    const t = Srs.nextDue(Lists.cardsFor(cards, listName), progress);
-    if (t === null) return '';
-    const days = Math.round((new Date(t).setHours(0, 0, 0, 0) - new Date(now()).setHours(0, 0, 0, 0)) / Srs.DAY);
-    if (days <= 0) return 'Есть слова к повторению';
-    if (days === 1) return 'Следующий повтор - завтра';
-    return 'Следующий повтор - через\u00a0' + days + '\u00a0' + daysWord(days);
-  }
-
   function render() {
     $('listName').textContent = Lists.label(listName);
     const total = state.total;
@@ -111,26 +104,22 @@
     $('prev').disabled = !history.length;
     $('next').disabled = finished;
 
-    const ipaBtn = $('ipaBtn'), ipaBox = $('ipaBox'), hint = $('hint'), doneBtns = $('doneBtns');
+    const ipaBtn = $('ipaBtn'), ipaBox = $('ipaBox'), hint = $('hint');
+    // Метка режима: план на сегодня выполнен, дальше тренировка трудных слов.
+    $('mode').textContent = state.practice ? '✓ План на сегодня выполнен · тренировка' : '';
 
-    if (finished) {
-      // Конец занятия: результат и куда идти дальше - еще раз этот список или другой.
+    if (finished) { // сюда попадаем только с пустым списком
       $('face').dataset.side = 'done';
       $('word').style.fontSize = '';
-      const subset = Lists.cardsFor(cards, listName);
-      const empty = !subset.length;
-      $('word').textContent = empty ? 'Пусто' : 'Отлично!';
-      hint.textContent = empty ? 'В этом списке нет слов.'
-        : ('Выучено ' + Srs.learnedCount(subset, progress) + '\u00a0из\u00a0' + subset.length + '\n' + whenNext()).trim();
+      $('word').textContent = 'Пусто';
+      hint.textContent = 'В этом списке нет слов.';
       hint.hidden = false;
       ipaBtn.hidden = ipaBox.hidden = true;
-      doneBtns.hidden = false;
-      $('again').hidden = empty;
       $('other').hidden = Lists.menuItems(cards).length < 2;
       return;
     }
 
-    doneBtns.hidden = true;
+    $('other').hidden = true;
     hint.hidden = true;
     const card = byKey.get(Srs.current(state));
     if (!state.flipped) {
@@ -164,7 +153,9 @@
     if (history.length > UNDO_MAX) history.shift();
     const r = Srs.swipe(state, progress, now());
     progress = r.progress;
-    update(r.s);
+    state = r.s;
+    keepGoing(key);
+    update(state);
   }
 
   // Вернуть предыдущую карточку: занятие и запись прогресса этого слова - как до смахивания.
@@ -180,23 +171,23 @@
   }
 
   // --- выбор списка ---
-  // В меню: сколько слов списка уже выучено (прошли хотя бы первое повторение) из всех.
-  function progressOf(name) {
-    const subset = Lists.cardsFor(cards, name);
-    return { total: subset.length, done: Srs.learnedCount(subset, progress) };
+  // В меню: сколько слов списка еще ждут сегодня ("✓" - план выполнен).
+  function todayOf(name) {
+    const n = Srs.remainingToday(Lists.cardsFor(cards, name), progress, now());
+    return n ? 'еще ' + n : '✓';
   }
 
   function showPicker() {
     const box = $('pickerList');
     box.textContent = '';
     for (const name of Lists.menuItems(cards)) {
-      const p = progressOf(name);
+
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'pick' + (name === listName ? ' current' : '');
       b.dataset.list = name;
       const t = document.createElement('span'); t.textContent = Lists.label(name);
-      const n = document.createElement('span'); n.className = 'cnt'; n.textContent = p.done + ' / ' + p.total;
+      const n = document.createElement('span'); n.className = 'cnt'; n.textContent = todayOf(name);
       b.append(t, n);
       b.addEventListener('click', () => { hidePicker(); persist(); preferred = name; openList(name); persist(); render(); });
       box.append(b);
@@ -326,7 +317,6 @@
   $('ipaBtn').addEventListener('click', () => update(Srs.toggleIpa(state)));
   // На экране "на сегодня все": пройти список еще раз. Расписание раньше срока не сдвигается,
   // а забытые слова снова попадают на доучивание.
-  $('again').addEventListener('click', () => { openList(listName, true); persist(); render(); });
   $('other').addEventListener('click', () => showPicker());
 
   persist();
@@ -343,7 +333,14 @@
         persist();
         openList(preferred); // выбранный список появился после загрузки таблицы
       } else if (items.includes(listName)) {
-        state = Srs.merge(state, Lists.cardsFor(cards, listName), progress, now());
+        const subset = Lists.cardsFor(cards, listName);
+        if (state.practice && Srs.hasNew(subset, progress)) {
+          // в таблицу добавили слова - из тренировки возвращаемся к плану на сегодня
+          state = Srs.buildSession(subset, progress, now());
+        } else {
+          state = Srs.merge(state, subset, progress, now());
+        }
+        keepGoing();
       } else {
         openList(Lists.ALL); // выбранный список исчез из таблицы
       }

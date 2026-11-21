@@ -132,48 +132,62 @@ test('короткое смахивание, вправо или вертика�
   assert.equal(d.querySelector('.card').style.transform, '');
 });
 
-test('все вспомнил - "Отлично!", дата повторения и "Повторить еще раз"', async () => {
-  const sheet = '"Русский","Английский"\n"тихо","quietly"\n"очередь","queue"\n';
+test('план выполнен - стоп-экрана нет, сразу тренировка трудных слов', async () => {
+  const sheet = '"Русский","Английский"\n"тихо","quietly"\n"очередь","queue"\n"окно","window"\n';
   const t = await open({ sheet });
-  await t.swipe(); await t.swipe();
-  assert.equal(t.word(), 'Отлично!');
-  assert.match(t.$('hint').textContent, /через\s3\sдня/);
-  assert.equal(t.$('again').hidden, false);
-  assert.match(t.$('hint').textContent, /Выучено 2\sиз\s2/);
-  assert.equal(t.$('other').hidden, true, 'другого списка нет - кнопки нет');
-  // в тот же день, после перезапуска - все так же
-  const t2 = await open({ storage: t.ls(), sheet });
-  assert.equal(t2.word(), 'Отлично!');
-  // "Повторить еще раз" - снова все слова, расписание не сдвигается
-  t2.$('again').click();
-  assert.equal(t2.$('counter').textContent, '1 / 2');
-  assert.equal(t2.$('face').dataset.side, 'ru', 'кнопка не переворачивает');
-  const before = t2.w.localStorage.getItem(PROG);
-  await t2.swipe();
-  assert.equal(t2.w.localStorage.getItem(PROG), before);
+  assert.equal(t.$('mode').textContent, '');
+  // "окно" забыл (доучено тремя шагами), остальные вспомнил
+  for (let i = 0; i < 20 && !t.$('mode').textContent; i++) {
+    if (t.word() === 'окно' && !t.w.localStorage.getItem(PROG).includes('window|')) t.$('face').click();
+    await t.swipe();
+  }
+  assert.match(t.$('mode').textContent, /План на сегодня выполнен/);
+  assert.equal(t.$('face').dataset.side, 'ru', 'дальше обычная карточка, а не экран "конец"');
+  assert.equal(t.$('counter').textContent, '1 / 3');
+  // самое трудное - забытое "окно"; первым оно не идет, только если его ответили последним
+  const firstTwo = [t.word()];
+  await t.swipe(); firstTwo.push(t.word());
+  assert.ok(firstTwo.includes('окно'), firstTwo.join(', '));
+  // раньше срока тренировка расписание не сдвигает
+  const before = t.w.localStorage.getItem(PROG);
+  await t.swipe();
+  const after = JSON.parse(t.w.localStorage.getItem(PROG));
+  const b = JSON.parse(before);
+  for (const k of Object.keys(b)) { assert.equal(after[k].due, b[k].due); assert.equal(after[k].lvl, b[k].lvl); }
 });
 
-test('через 3 дня слова снова в занятии', async () => {
+test('тренировка идет кругами без конца; одно и то же слово не два раза подряд', async () => {
+  const sheet = '"Русский","Английский"\n"тихо","quietly"\n"очередь","queue"\n';
+  const t = await open({ sheet });
+  await t.swipe(); await t.swipe(); // план
+  const seq = [];
+  for (let i = 0; i < 8; i++) { seq.push(t.word()); await t.swipe(); }
+  assert.match(t.$('mode').textContent, /тренировка/);
+  for (let i = 1; i < seq.length; i++) assert.notEqual(seq[i], seq[i - 1], 'подряд: ' + seq.join(', '));
+});
+
+test('через 3 дня слова снова в плане, до этого - сразу тренировка', async () => {
   const sheet = '"Русский","Английский"\n"тихо","quietly"\n"очередь","queue"\n';
   const t = await open({ sheet });
   await t.swipe(); await t.swipe();
   const t2 = await open({ storage: t.ls(), sheet, now: T0 + 1 * S.DAY });
-  assert.equal(t2.word(), 'Отлично!');
-  assert.match(t2.$('hint').textContent, /через\s2\sдня/);
+  assert.match(t2.$('mode').textContent, /тренировка/);
   const t3 = await open({ storage: t.ls(), sheet, now: T0 + 3 * S.DAY });
+  assert.equal(t3.$('mode').textContent, '');
   assert.equal(t3.$('counter').textContent, '1 / 2');
 });
 
-test('приложение висело в фоне до следующего дня - при возвращении новое занятие', async () => {
+test('приложение висело в фоне до следующего дня - при возвращении новый план', async () => {
   const sheet = '"Русский","Английский"\n"тихо","quietly"\n';
   const t = await open({ sheet });
-  t.$('face').click(); await t.swipe(); // забыл
-  await t.swipe(); await t.swipe();     // шаг 1 и шаг 2 доучивания
-  assert.equal(t.word(), 'Отлично!');
+  t.$('face').click(); await t.swipe();          // забыл
+  for (let i = 0; i < 3; i++) await t.swipe();   // три шага доучивания
+  assert.match(t.$('mode').textContent, /тренировка/);
   t.w.__now = T0 + S.DAY;
   t.w.__setVis('hidden'); t.d.dispatchEvent(new t.w.Event('visibilitychange'));
   t.w.__setVis('visible'); t.d.dispatchEvent(new t.w.Event('visibilitychange'));
   await t.w.flashcardsReady;
+  assert.equal(t.$('mode').textContent, '', 'снова план, не тренировка');
   assert.equal(t.word(), 'тихо');
 });
 
@@ -237,14 +251,16 @@ const LISTS_CSV = '"Русский","Английский","Транскрипц
   '"дверь","door","","","Урок 5"\n' +
   '"окно","window","","",""\n';
 
-test('меню списков: все списки, выучено / всего', async () => {
+test('меню списков: сколько слов еще ждут сегодня, "✓" - план выполнен', async () => {
   const t = await open({ sheet: LISTS_CSV });
-  await t.swipe(); // одно слово сразу вспомнил - выучено
   t.$('listBtn').click();
-  const items = [...t.d.querySelectorAll('.pick')].map((b) => b.textContent);
-  assert.equal(items.length, 4);
-  assert.equal(items[0], 'Все слова1 / 4');
-  assert.deepEqual(items.map((x) => x.replace(/\d.*$/, '')), ['Все слова', 'NNN', 'Урок ', 'Без списка']);
+  let items = [...t.d.querySelectorAll('.pick')].map((b) => b.textContent);
+  assert.deepEqual(items, ['Все словаеще 4', 'NNNеще 2', 'Урок 5еще 2', 'Без спискаеще 1']);
+  t.d.querySelector('.pick[data-list="__none__"]').click();
+  await t.swipe(); // "окно" вспомнил
+  t.$('listBtn').click();
+  items = [...t.d.querySelectorAll('.pick')].map((b) => b.textContent);
+  assert.deepEqual(items, ['Все словаеще 3', 'NNNеще 2', 'Урок 5еще 2', 'Без списка✓']);
 });
 
 test('выбор списка показывает только его слова; выученное в одном списке выучено и в другом', async () => {
@@ -354,13 +370,14 @@ test('вернул карточку, ответ которой уже видел
   assert.equal(p.lvl, 0, 'засчитано как "не помню"');
 });
 
-test('возврат на несколько карточек назад и с экрана "Отлично!"', async () => {
+test('возврат на несколько карточек назад, в том числе из тренировки в план', async () => {
   const sheet = '"Русский","Английский"\n"тихо","quietly"\n"очередь","queue"\n"окно","window"\n';
   const t = await open({ sheet });
   const seen = [];
   for (let i = 0; i < 3; i++) { seen.push(t.word()); await t.swipe(); }
-  assert.equal(t.word(), 'Отлично!');
+  assert.match(t.$('mode').textContent, /тренировка/);
   await swipeTo(t, +150); assert.equal(t.word(), seen[2]);
+  assert.equal(t.$('mode').textContent, '', 'вернулись в план');
   await swipeTo(t, +150); assert.equal(t.word(), seen[1]);
   await swipeTo(t, +150); assert.equal(t.word(), seen[0]);
   await swipeTo(t, +150); assert.equal(t.word(), seen[0], 'дальше начала занятия некуда');
@@ -402,14 +419,13 @@ test('стрелки на экране: › - дальше, ‹ - назад; н
   const t = await open({ sheet });
   const first = t.word();
   assert.equal(t.$('prev').disabled, true, 'назад некуда');
-  assert.equal(t.$('next').disabled, false);
   t.$('next').click(); await sleep(220);
   assert.equal(t.$('counter').textContent, '2 / 2');
   assert.equal(t.$('face').dataset.side, 'ru', 'кнопка не переворачивает');
   assert.equal(t.$('prev').disabled, false);
   t.$('next').click(); await sleep(220);
-  assert.equal(t.word(), 'Отлично!');
-  assert.equal(t.$('next').disabled, true, 'дальше некуда');
+  assert.match(t.$('mode').textContent, /тренировка/);
+  assert.equal(t.$('next').disabled, false, 'в тренировке дальше можно всегда');
   t.$('prev').click(); await sleep(220);
   t.$('prev').click(); await sleep(220);
   assert.equal(t.word(), first);
@@ -433,16 +449,23 @@ test('возврат работает только в пределах заня�
   assert.equal(t.$('counter').textContent, before);
 });
 
-test('конец списка: "Другой список" открывает меню, выбор открывает список', async () => {
+test('пустой список: "Пусто" и кнопка "Другой список"', async () => {
   const t = await open({ sheet: LISTS_CSV });
-  t.$('listBtn').click(); t.d.querySelector('.pick[data-list="Урок 5"]').click();
-  await t.swipe(); await t.swipe();
-  assert.equal(t.word(), 'Отлично!');
-  assert.equal(t.$('other').hidden, false);
-  t.$('other').click();
-  assert.equal(t.$('picker').hidden, false);
-  assert.equal(t.$('face').dataset.side, 'done', 'кнопка не переворачивает');
-  t.d.querySelector('.pick[data-list="__none__"]').click();
-  assert.equal(t.$('listName').textContent, 'Без списка');
+  // все слова "Без списка" убрали из таблицы, пока список был открыт
+  t.$('listBtn').click(); t.d.querySelector('.pick[data-list="__none__"]').click();
+  assert.equal(t.word(), 'окно');
+  assert.equal(t.$('other').hidden, true);
+});
+
+test('добавили слова в таблицу во время тренировки - возврат к плану с новыми словами', async () => {
+  let csv = '"Русский","Английский"\n"тихо","quietly"\n';
+  const t = await open({ sheet: () => csv });
+  await t.swipe();
+  assert.match(t.$('mode').textContent, /тренировка/);
+  csv += '"окно","window"\n';
+  t.w.__now += 60000;
+  t.d.dispatchEvent(new t.w.Event('visibilitychange'));
+  await t.w.flashcardsReady;
+  assert.equal(t.$('mode').textContent, '');
   assert.equal(t.word(), 'окно');
 });

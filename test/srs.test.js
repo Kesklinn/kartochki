@@ -36,7 +36,7 @@ test('новое слово, смахнул не переворачивая: з�
   assert.equal(s.queue.includes(first), false);
 });
 
-test('не помню: слово возвращается через 3 карточки, затем через 7, потом завтра', () => {
+test('не помню: слово возвращается через 3, 7 и 15 карточек, потом завтра', () => {
   const words = mk('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l');
   let s = S.buildSession(words, {}, T0, noShuffle);
   let p = {};
@@ -52,7 +52,10 @@ test('не помню: слово возвращается через 3 карт
   assert.equal(s.queue.indexOf(x), 7, 'второй шаг - через 7 карточек');
   for (let i = 0; i < 7; i++) ({ s, progress: p } = swipeKnown(s, p));
   assert.equal(S.current(s), x);
-  ({ s, progress: p } = swipeKnown(s, p)); // вспомнил на втором шаге - выучено
+  ({ s, progress: p } = swipeKnown(s, p)); // вспомнил на втором шаге
+  assert.equal(s.queue.indexOf(x), Math.min(15, s.queue.length - 1), 'третий шаг - через 15 карточек (или в конец)');
+  while (S.current(s) !== x) ({ s, progress: p } = swipeKnown(s, p));
+  ({ s, progress: p } = swipeKnown(s, p)); // вспомнил на третьем шаге - доучено
   assert.equal(s.queue.includes(x), false);
   assert.equal(p[x].lvl, 1);
   assert.equal(p[x].due, T0 + 1 * DAY, 'после доучивания - завтра');
@@ -74,8 +77,7 @@ test('если в занятии одно слово, забытое показ�
   let p = {};
   ({ s, progress: p } = swipeForgot(s, p));
   assert.deepEqual(s.queue, [K('a')]);
-  ({ s, progress: p } = swipeKnown(s, p));
-  ({ s, progress: p } = swipeKnown(s, p));
+  for (let i = 0; i < 3; i++) ({ s, progress: p } = swipeKnown(s, p));
   assert.ok(S.isFinished(s));
   assert.equal(s.done, 1);
 });
@@ -172,8 +174,7 @@ test('слова, отвеченные сегодня в другом списк
   let p = {};
   ({ s, progress: p } = swipeKnown(s, p, T0));
   ({ s, progress: p } = swipeForgot(s, p, T0));
-  ({ s, progress: p } = swipeKnown(s, p, T0));
-  ({ s, progress: p } = swipeKnown(s, p, T0));
+  for (let i = 0; i < 3; i++) ({ s, progress: p } = swipeKnown(s, p, T0));
   assert.ok(S.isFinished(s));
   // открыли список из четырех слов в тот же день
   const v = S.buildSession(words, p, T0 + 3600e3, noShuffle);
@@ -196,4 +197,24 @@ test('вернулся к начатому списку: слова, отвеч�
   assert.equal(back.queue.includes(K('a')), false);
   assert.equal(back.done, 1);
   assert.equal(back.total, 3);
+});
+
+test('тренировка: трудные слова первыми', () => {
+  const p = {
+    [K('easy')]: { lvl: 5, due: T0 + 30 * DAY, lapses: 0 },
+    [K('mid')]: { lvl: 2, due: T0 + 3 * DAY, lapses: 0 },
+    [K('hard')]: { lvl: 1, due: T0 + DAY, lapses: 3 },
+    [K('lapsed')]: { lvl: 0, due: T0, lapses: 1 },
+  };
+  const s = S.buildSession(mk('easy', 'mid', 'hard', 'lapsed', 'new'), p, T0, Math.random, true);
+  assert.deepEqual(s.queue, [K('new'), K('lapsed'), K('hard'), K('mid'), K('easy')]);
+  const s2 = S.buildSession(mk('easy', 'mid', 'hard', 'lapsed', 'new'), p, T0, Math.random, true, K('new'));
+  assert.notEqual(s2.queue[0], K('new'), 'только что отвеченное не первым');
+});
+
+test('сколько осталось на сегодня', () => {
+  const p = { [K('a')]: { lvl: 1, due: T0 + DAY, lapses: 0 }, [K('b')]: { lvl: 1, due: T0 - DAY, lapses: 0 } };
+  assert.equal(S.remainingToday(mk('a', 'b', 'c'), p, T0), 2);
+  assert.equal(S.hasNew(mk('a', 'b'), p), false);
+  assert.equal(S.hasNew(mk('a', 'c'), p), true);
 });
