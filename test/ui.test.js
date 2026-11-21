@@ -95,19 +95,19 @@ test('слова из таблицы: новые добавляются, про�
   const csv = fs.readFileSync(require('path').join(__dirname, 'words.csv'), 'utf8') + '"дверь","door","/dɔː/","«до»"\n';
   const t2 = await open({ storage: { [KEY]: saved }, sheet: csv });
   assert.equal(t2.$('counter').textContent, '2 / 25');
-  assert.match(t2.$('status').textContent, /25/);
+  assert.equal(t2.$('status').textContent, '', 'при успешной загрузке внизу пусто');
   const cached = JSON.parse(t2.dom.window.localStorage.getItem('nnn-words-v2'));
   assert.equal(cached.length, 25);
   // без сети: слова из памяти телефона, включая новое
   const t3 = await open({ storage: { [KEY]: t2.dom.window.localStorage.getItem(KEY), 'nnn-words-v2': JSON.stringify(cached) } });
   assert.equal(t3.$('counter').textContent, '2 / 25');
-  assert.match(t3.$('status').textContent, /Нет связи/);
+  assert.match(t3.$('status').textContent, /Не удалось обновить/);
 });
 
 test('закрытая таблица не ломает приложение', async () => {
   const { $, word } = await open({ sheet: '<!DOCTYPE html><html>sign in' });
   assert.ok(byRu(word()));
-  assert.match($('status').textContent, /Нет связи/);
+  assert.match($('status').textContent, /Не удалось обновить/);
 });
 
 test('работает без localStorage', async () => {
@@ -181,4 +181,21 @@ test('прогресс прошлой версии переносится во "
   const old = JSON.stringify({ v: 2, queue: keys.slice(3), doneKeys: keys.slice(0, 3) });
   const { $ } = await open({ storage: { 'nnn-flashcards-v2': old } });
   assert.equal($('counter').textContent, '4 / 24');
+});
+
+test('без интернета внизу ничего не пишется', async () => {
+  const dom = new JSDOM(html, {
+    runScripts: 'dangerously', url: 'https://example.test/',
+    beforeParse(win) {
+      Object.defineProperty(win.navigator, 'onLine', { get: () => false });
+      win.fetch = async () => { throw new Error('offline'); };
+    },
+  });
+  await dom.window.flashcardsReady;
+  assert.equal(dom.window.document.getElementById('status').textContent, '');
+});
+
+test('тема всегда темная', () => {
+  assert.match(html, /color-scheme:dark}/);
+  assert.doesNotMatch(html, /prefers-color-scheme/);
 });
