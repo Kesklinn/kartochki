@@ -32,8 +32,16 @@
   const subsetOf = (name) => Lists.cardsFor(cards, name);
 
   let progress = Srs.restoreProgress(store.get(PROGRESS_KEY));
+  // Старые записи без времени ответа: их ответили раньше, чем приложение начало его хранить
+  // (это было сегодня). Ставим время сейчас, чтобы они вошли в счет "сделано сегодня",
+  // и пересобираем сохраненные сессии - иначе в списке видна только часть слов (1/39 вместо 12/50).
+  let migrated = false;
+  for (const k of Object.keys(progress)) {
+    if (!progress[k].last) { progress[k].last = now(); migrated = true; }
+  }
+  if (migrated) store.set(PROGRESS_KEY, JSON.stringify(progress));
   const saved = readJson(SESSIONS_KEY) || {};
-  const sessions = saved.sessions && typeof saved.sessions === 'object' ? saved.sessions : {};
+  const sessions = !migrated && saved.sessions && typeof saved.sessions === 'object' ? saved.sessions : {};
   // preferred - список, выбранный пользователем; listName - открытый сейчас.
   // Они расходятся, пока выбранного списка нет в словах (например, до загрузки таблицы).
   let preferred = typeof saved.current === 'string' ? saved.current : Lists.ALL;
@@ -242,9 +250,18 @@
 
   // --- выбор списка ---
   // В меню: сколько слов списка еще ждут сегодня ("✓" - план выполнен).
+  function wordsWord(n) {
+    const a = n % 10, b = n % 100;
+    if (a === 1 && b !== 11) return 'слово';
+    if (a >= 2 && a <= 4 && (b < 12 || b > 14)) return 'слова';
+    return 'слов';
+  }
+  // Справа в меню: сколько всего слов в списке и сколько из них еще ждут сегодня.
   function todayOf(name) {
-    const n = Srs.remainingToday(subsetOf(name), progress, now());
-    return n ? 'еще ' + n : '✓';
+    const list = subsetOf(name);
+    const total = new Set(list.map(Srs.keyOf)).size;
+    const n = Srs.remainingToday(list, progress, now());
+    return total + ' ' + wordsWord(total) + ' · ' + (n ? 'еще ' + n : '✓');
   }
 
   function showPicker() {

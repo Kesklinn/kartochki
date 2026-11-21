@@ -255,12 +255,12 @@ test('меню списков: сколько слов еще ждут сего�
   const t = await open({ sheet: LISTS_CSV });
   t.$('listBtn').click();
   let items = [...t.d.querySelectorAll('.pick')].map((b) => b.textContent);
-  assert.deepEqual(items, ['Все словаеще 4', 'NNNеще 2', 'Урок 5еще 2', 'Без спискаеще 1']);
+  assert.deepEqual(items, ['Все слова4 слова · еще 4', 'NNN2 слова · еще 2', 'Урок 52 слова · еще 2', 'Без списка1 слово · еще 1']);
   t.d.querySelector('.pick[data-list="__none__"]').click();
   await t.swipe(); // "окно" вспомнил
   t.$('listBtn').click();
   items = [...t.d.querySelectorAll('.pick')].map((b) => b.textContent);
-  assert.deepEqual(items, ['Все словаеще 3', 'NNNеще 2', 'Урок 5еще 2', 'Без списка✓']);
+  assert.deepEqual(items, ['Все слова4 слова · еще 3', 'NNN2 слова · еще 2', 'Урок 52 слова · еще 2', 'Без списка1 слово · ✓']);
 });
 
 test('выбор списка показывает только его слова; выученное в одном списке выучено и в другом', async () => {
@@ -529,3 +529,14 @@ test('вручную выбранный выполненный список: е�
   assert.equal(t.word(), 'Отлично!', 'слабых больше нет - не по кругу');
 });
 
+
+test('слова, отвеченные до появления времени ответа, входят в счет: 4 / 24, а не 1 / 20', async () => {
+  const keys = CARDS.map(S.keyOf);
+  const old = {};
+  for (const k of keys.slice(0, 3)) old[k] = { lvl: 2, due: T0 + 3 * S.DAY, lapses: 0 }; // без last
+  const t = await open({ storage: { ...startWith(5), [PROG]: JSON.stringify(old) } });
+  assert.equal(t.$('counter').textContent, '4 / 24');
+  assert.ok(JSON.parse(t.w.localStorage.getItem(PROG))[keys[0]].last);
+  t.$('listBtn').click();
+  assert.equal(t.d.querySelector('.pick .cnt').textContent, '24 слова · еще 21');
+});
