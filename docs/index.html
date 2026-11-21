@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#2f6f5e">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Карточки English</title>
+<style>
+:root{--bg:#eef2f0;--card:#fff;--fg:#1d2a26;--muted:#5f716b;--accent:#2f6f5e;--no:#b5533c;--line:#d3ddd9;
+--display:Georgia,"Times New Roman",serif;--body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#141b19;--card:#1f2926;--fg:#e6eeeb;--muted:#9aaba5;--accent:#7cc4ae;--no:#e38a72;--line:#33423d;color-scheme:dark}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:16px var(--body);
+padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+main{max-width:480px;margin:0 auto;min-height:100%;display:flex;flex-direction:column;gap:14px}
+header{display:flex;justify-content:space-between;align-items:center;gap:10px}
+#listBtn{display:flex;align-items:center;gap:6px;min-width:0;padding:8px 12px;font:700 1.15rem var(--display);border-color:var(--line)}
+#listName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#listBtn .arr{font:600 .8rem var(--body);color:var(--muted)}
+#picker{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:flex-start;justify-content:center;
+padding:max(64px,env(safe-area-inset-top)) 16px 16px;z-index:10}
+#pickerBox{background:var(--card);border-radius:16px;width:100%;max-width:448px;max-height:75vh;overflow:auto;padding:8px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+#pickerBox h2{font:600 .8rem var(--body);color:var(--muted);margin:8px 10px 6px;text-transform:uppercase;letter-spacing:.04em}
+.pick{display:flex;justify-content:space-between;align-items:center;width:100%;gap:12px;text-align:left;border:0;border-radius:10px;padding:13px 12px;background:transparent}
+.pick.current{background:var(--bg);color:var(--accent)}
+.pick .cnt{color:var(--muted);font-weight:500;font-variant-numeric:tabular-nums;font-size:.9rem}
+#counter{color:var(--muted);font-weight:600;font-variant-numeric:tabular-nums}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+.card{flex:1;min-height:320px;background:var(--card);border:1px solid var(--line);border-radius:18px;
+display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px 20px;text-align:center}
+#face{cursor:pointer;width:100%;display:flex;flex-direction:column;align-items:center;gap:10px;padding:12px;border-radius:12px;-webkit-tap-highlight-color:transparent;user-select:none}
+#face:focus-visible,button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+#word{font:2rem/1.25 var(--display)}
+#face[data-side="en"] #word{color:var(--accent);font-weight:700}
+#hint{color:var(--muted);font-size:.85rem}
+/* место под кнопку/транскрипцию всегда зарезервировано, поэтому слово не сдвигается */
+#slot{height:76px;display:flex;align-items:flex-start;justify-content:center}
+#ipaBox{display:flex;flex-direction:column;gap:6px}
+#ipa{color:var(--muted);font-size:1.15rem}
+#read{font-size:1.2rem}
+button{font:600 1rem var(--body);padding:14px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
+button:disabled{opacity:.4;cursor:default}
+#ipaBtn{padding:10px 18px;border-color:var(--accent);color:var(--accent);background:transparent}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#know{background:var(--accent);border-color:var(--accent);color:var(--card)}
+#dontknow{color:var(--no);border-color:var(--no)}
+#restart{background:transparent}
+#status{margin:0;text-align:center;color:var(--muted);font-size:.75rem;line-height:1.4;height:1.4em;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+@media (prefers-reduced-motion:reduce){.bar i{transition:none}}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <button id="listBtn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="picker"><span id="listName"></span><span class="arr" aria-hidden="true">▼</span></button>
+    <span id="counter">1 / 1</span>
+  </header>
+  <div class="bar"><i id="fill"></i></div>
+  <section class="card">
+    <div id="face" role="button" tabindex="0" aria-live="polite" data-side="ru">
+      <div id="word"></div>
+      <div id="hint"></div>
+    </div>
+    <div id="slot">
+      <button id="ipaBtn" type="button" hidden aria-controls="ipaBox" aria-expanded="false">Транскрипция</button>
+      <div id="ipaBox" hidden><div id="ipa"></div><div id="read"></div></div>
+    </div>
+  </section>
+  <div class="row"><button id="dontknow" type="button">Не знаю</button><button id="know" type="button">Знаю</button></div>
+  <button id="restart" type="button">Заново</button>
+  <p id="status" aria-live="polite"></p>
+</main>
+<div id="picker" hidden role="dialog" aria-modal="true" aria-label="Выбор списка">
+  <div id="pickerBox"><h2>Список слов</h2><div id="pickerList"></div></div>
+</div>
+<script>
+// Логика колоды: без DOM, чтобы тестировать отдельно.
+// Карточка: { ru, en, ipa, read }. ipa и read могут быть пустыми.
+// Прогресс хранится по ключам слов, а не по номерам: добавление слов
+// в таблицу не сбрасывает уже пройденное.
+
+const RETRY_GAP = 3; // "Не знаю": карточка вернется через 3 карточки
+
+function keyOf(card) {
+  return card.en.trim().toLowerCase() + '|' + card.ru.trim().toLowerCase();
+}
+
+function shuffle(arr, rng = Math.random) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function uniqueKeys(cards) {
+  return [...new Set(cards.map(keyOf))];
+}
+
+function newSession(cards, rng = Math.random) {
+  return { queue: shuffle(uniqueKeys(cards), rng), doneKeys: [], flipped: false, ipaShown: false };
+}
+
+const total = (s) => s.queue.length + s.doneKeys.length;
+const done = (s) => s.doneKeys.length;
+const current = (s) => (s.queue.length ? s.queue[0] : null);
+const isFinished = (s) => s.queue.length === 0;
+
+function flip(s) {
+  if (isFinished(s)) return s;
+  return { ...s, flipped: !s.flipped, ipaShown: false }; // транскрипция скрыта при каждом перевороте
+}
+
+function toggleIpa(s) {
+  if (isFinished(s) || !s.flipped) return s; // только на английской стороне
+  return { ...s, ipaShown: !s.ipaShown };
+}
+
+function know(s) {
+  if (isFinished(s)) return s;
+  return { ...s, queue: s.queue.slice(1), doneKeys: [...s.doneKeys, s.queue[0]], flipped: false, ipaShown: false };
+}
+
+function dontKnow(s) {
+  if (isFinished(s)) return s;
+  const [first, ...rest] = s.queue;
+  rest.splice(Math.min(rest.length, RETRY_GAP), 0, first);
+  return { ...s, queue: rest, flipped: false, ipaShown: false };
+}
+
+// Подстраивает сессию под новый список слов:
+// удаленные слова исчезают, новые встают в очередь на случайные места,
+// пройденные остаются пройденными.
+function merge(s, cards, rng = Math.random) {
+  const keys = uniqueKeys(cards);
+  const has = new Set(keys);
+  const queue = s.queue.filter((k) => has.has(k));
+  const doneKeys = s.doneKeys.filter((k) => has.has(k));
+  const known = new Set([...queue, ...doneKeys]);
+  for (const k of shuffle(keys.filter((x) => !known.has(x)), rng)) {
+    queue.splice(Math.floor(rng() * (queue.length + 1)), 0, k);
+  }
+  const sameFront = queue[0] === s.queue[0];
+  return { queue, doneKeys, flipped: sameFront && s.flipped, ipaShown: sameFront && s.ipaShown };
+}
+
+function hasIpa(card) {
+  return Boolean((card.ipa && card.ipa.trim()) || (card.read && card.read.trim()));
+}
+
+function serialize(s) {
+  return JSON.stringify({ v: 2, queue: s.queue, doneKeys: s.doneKeys });
+}
+
+// Восстановление из сохраненного. null, если данных нет или они испорчены.
+function restore(raw, cards) {
+  try {
+    const o = JSON.parse(raw);
+    if (!o || o.v !== 2 || !Array.isArray(o.queue) || !Array.isArray(o.doneKeys)) return null;
+    const all = [...o.queue, ...o.doneKeys];
+    if (!all.every((k) => typeof k === 'string') || new Set(all).size !== all.length) return null;
+    return merge({ queue: o.queue, doneKeys: o.doneKeys, flipped: false, ipaShown: false }, cards);
+  } catch {
+    return null;
+  }
+}
+
+const Deck = { RETRY_GAP, keyOf, shuffle, newSession, total, done, current, isFinished, flip, toggleIpa, know, dontKnow, merge, hasIpa, serialize, restore };
+
+
+// Чтение слов из Google-таблицы (CSV).
+// Столбцы: Русский | Английский | Транскрипция | Чтение | Список. Первая строка - заголовок.
+// В "Список" можно несколько названий через запятую; пусто - слово только во "Все слова".
+
+const SHEET_ID = '17X-eUQzulBYLosELbQ4PD_6HL-trYI9AO11DLDUcr50';
+const SHEET_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:csv&headers=1';
+
+// CSV по RFC 4180: кавычки, запятые и переносы строк внутри кавычек.
+function parseCSV(text) {
+  const rows = [];
+  let row = [], field = '', inQ = false;
+  text = text.replace(/^﻿/, '');
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQ) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; } else inQ = false;
+      } else field += ch;
+    } else if (ch === '"') inQ = true;
+    else if (ch === ',') { row.push(field); field = ''; }
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i++;
+      row.push(field); rows.push(row); row = []; field = '';
+    } else field += ch;
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+function rowsToCards(rows) {
+  const out = [];
+  rows.forEach((r, i) => {
+    const [ru = '', en = '', ipa = '', read = '', list = ''] = r.map((x) => (x || '').trim());
+    if (i === 0 && /^русск/i.test(ru)) return; // заголовок
+    if (!ru || !en) return; // пустые и недописанные строки пропускаем
+    const lists = [...new Set(list.split(',').map((x) => x.trim()).filter(Boolean))];
+    out.push({ ru, en, ipa, read, lists });
+  });
+  return out;
+}
+
+async function fetchCards(fetchFn = fetch, url = SHEET_URL) {
+  const res = await fetchFn(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const text = await res.text();
+  if (/^\s*</.test(text)) throw new Error('таблица закрыта (нет доступа по ссылке)');
+  const cards = rowsToCards(parseCSV(text));
+  if (!cards.length) throw new Error('в таблице нет слов');
+  return cards;
+}
+
+const Sheet = { SHEET_ID, SHEET_URL, parseCSV, rowsToCards, fetchCards };
+
+
+// Списки слов: "Все слова", списки из столбца "Список", "Без списка".
+const ALL = '__all__';
+const NONE = '__none__';
+
+function listNames(cards) {
+  const names = [];
+  for (const c of cards) for (const l of c.lists || []) if (!names.includes(l)) names.push(l);
+  return names;
+}
+
+function hasUnlisted(cards) {
+  return cards.some((c) => !c.lists || !c.lists.length);
+}
+
+// Пункты меню в порядке показа: все, списки по порядку появления, без списка.
+function menuItems(cards) {
+  const items = [ALL, ...listNames(cards)];
+  if (hasUnlisted(cards) && items.length > 1) items.push(NONE);
+  return items;
+}
+
+function cardsFor(cards, name) {
+  if (name === ALL) return cards;
+  if (name === NONE) return cards.filter((c) => !c.lists || !c.lists.length);
+  return cards.filter((c) => (c.lists || []).includes(name));
+}
+
+function label(name) {
+  return name === ALL ? 'Все слова' : name === NONE ? 'Без списка' : name;
+}
+
+const Lists = { ALL, NONE, listNames, menuItems, cardsFor, label };
+
+
+// Слова из колоды "Мои слова NNN". Без карточки-правила про -y -> -ily.
+const CARDS = [
+  { ru: "работать усердно", en: "work hard", ipa: "/wɜːk hɑːd/", read: "«уёк ХАД»" },
+  { ru: "сегодня вечером", en: "this evening / tonight", ipa: "/ðɪs ˈiːvnɪŋ/, /təˈnaɪt/", read: "«зис ИВнин», «тэНАЙТ»" },
+  { ru: "идёт дождь", en: "it rains / it's raining", ipa: "", read: "" },
+  { ru: "когда-либо", en: "ever", ipa: "/ˈevə/", read: "«Эвэ»" },
+  { ru: "тихо", en: "quietly", ipa: "/ˈkwaɪətli/", read: "«КВАЙэтли»" },
+  { ru: "невероятно", en: "incredibly", ipa: "/ɪnˈkredəbli/", read: "«инКРЭдэбли»" },
+  { ru: "полезно, здорово (о еде)", en: "healthily", ipa: "/ˈhelθɪli/", read: "«ХЭЛсили»" },
+  { ru: "идеально", en: "perfectly", ipa: "/ˈpɜːfɪktli/", read: "«ПЁфиктли»" },
+  { ru: "бегло", en: "fluently", ipa: "/ˈfluːəntli/", read: "«ФЛУэнтли»" },
+  { ru: "спокойно", en: "calmly", ipa: "/ˈkɑːmli/", read: "«КАМли» (l не читается)" },
+  { ru: "терпеливый / терпеливо", en: "patient / patiently", ipa: "/ˈpeɪʃnt/, /ˈpeɪʃntli/", read: "«ПЕЙшнт», «ПЕЙшнтли»" },
+  { ru: "очередь", en: "queue", ipa: "/kjuː/", read: "«кью»" },
+  { ru: "вести себя", en: "behave", ipa: "/bɪˈheɪv/", read: "«биХЕЙВ»" },
+  { ru: "кризис", en: "crisis", ipa: "/ˈkraɪsɪs/", read: "«КРАЙсис»" },
+  { ru: "относиться к, обращаться с", en: "treat", ipa: "/triːt/", read: "«трит» (без предлога)" },
+  { ru: "наступать", en: "tread", ipa: "/tred/", read: "«трэд»" },
+  { ru: "в начале месяца", en: "at the beginning of the month", ipa: "/bɪˈɡɪnɪŋ/", read: "«биГИнин»" },
+  { ru: "в конце месяца", en: "at the end of the month", ipa: "", read: "" },
+  { ru: "огромный", en: "huge", ipa: "/hjuːdʒ/", read: "«хьюдж»" },
+  { ru: "порция", en: "portion", ipa: "/ˈpɔːʃn/", read: "«ПОшн»" },
+  { ru: "следующие 40 лет", en: "for the next 40 years", ipa: "", read: "" },
+  { ru: "ездить верхом", en: "ride", ipa: "/raɪd/", read: "«райд»" },
+  { ru: "научиться что-то делать", en: "learn to do", ipa: "/lɜːn tə duː/", read: "«лён тэ ду»" },
+  { ru: "кто-нибудь; никто (в отрицании)", en: "anyone", ipa: "/ˈeniwʌn/", read: "«Эниуан»" },
+].map((c) => ({ ...c, lists: ["NNN"] }));
+
+
+// Интерфейс. Ожидает глобальные Deck, Sheet, Lists и CARDS (встроенные слова на случай без сети).
+(function () {
+  const KEY = 'nnn-flashcards-v3';      // выбранный список и прогресс по каждому списку
+  const OLD_KEY = 'nnn-flashcards-v2';  // прогресс прошлой версии (одна общая колода)
+  const WORDS_KEY = 'nnn-words-v2';     // последние слова из таблицы
+  const $ = (id) => document.getElementById(id);
+
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+  };
+
+  function loadCachedWords() {
+    try {
+      const w = JSON.parse(store.get(WORDS_KEY));
+      if (Array.isArray(w) && w.length && w.every((c) => c && c.ru && c.en && Array.isArray(c.lists))) return w;
+    } catch {}
+    return null;
+  }
+
+  // --- данные ---
+  let cards = [];
+  let byKey = new Map();
+  function setCards(list) {
+    cards = list;
+    byKey = new Map(list.map((c) => [Deck.keyOf(c), c]));
+  }
+  setCards(loadCachedWords() || CARDS);
+
+  let saved = {};
+  try { saved = JSON.parse(store.get(KEY)) || {}; } catch {}
+  const sessions = saved.sessions && typeof saved.sessions === 'object' ? saved.sessions : {};
+  if (!sessions[Lists.ALL] && store.get(OLD_KEY)) sessions[Lists.ALL] = store.get(OLD_KEY); // перенос старого прогресса
+  // preferred - список, выбранный пользователем; listName - открытый сейчас.
+  // Они расходятся, пока выбранного списка нет в словах (например, до загрузки таблицы).
+  let preferred = typeof saved.current === 'string' ? saved.current : Lists.ALL;
+  let listName = preferred;
+
+  let state;
+  function openList(name) {
+    if (!Lists.menuItems(cards).includes(name)) name = Lists.ALL;
+    listName = name;
+    const subset = Lists.cardsFor(cards, name);
+    state = (sessions[name] && Deck.restore(sessions[name], subset)) || Deck.newSession(subset);
+  }
+  openList(listName);
+
+  function persist() {
+    sessions[listName] = Deck.serialize(state);
+    store.set(KEY, JSON.stringify({ current: preferred, sessions }));
+  }
+
+  // --- отрисовка ---
+  function setStatus(text) { $('status').textContent = text; }
+
+  function render() {
+    $('listName').textContent = Lists.label(listName);
+    const total = Deck.total(state);
+    const done = Deck.done(state);
+    const finished = Deck.isFinished(state);
+    $('counter').textContent = (finished ? total : done + 1) + ' / ' + total;
+    $('fill').style.width = (total ? done / total * 100 : 0) + '%';
+    $('know').disabled = $('dontknow').disabled = finished;
+
+    const ipaBtn = $('ipaBtn'), ipaBox = $('ipaBox'), hint = $('hint');
+
+    if (finished) {
+      $('face').dataset.side = 'done';
+      $('word').textContent = total ? 'Готово!' : 'Пусто';
+      hint.textContent = total ? 'Все ' + total + ' карточек пройдены. Нажмите «Заново».' : 'В этом списке нет слов.';
+      hint.hidden = false;
+      ipaBtn.hidden = ipaBox.hidden = true;
+      return;
+    }
+
+    const card = byKey.get(Deck.current(state));
+    hint.hidden = true;
+    if (!state.flipped) {
+      $('face').dataset.side = 'ru';
+      $('word').textContent = card.ru;
+      ipaBtn.hidden = ipaBox.hidden = true;
+    } else {
+      $('face').dataset.side = 'en';
+      $('word').textContent = card.en;
+      const has = Deck.hasIpa(card);
+      // по нажатию кнопка исчезает, на ее месте появляется транскрипция
+      ipaBtn.hidden = !has || state.ipaShown;
+      ipaBtn.setAttribute('aria-expanded', String(state.ipaShown));
+      ipaBox.hidden = !(has && state.ipaShown);
+      $('ipa').textContent = card.ipa || '';
+      $('read').textContent = card.read || '';
+    }
+  }
+
+  function update(next) { state = next; persist(); render(); }
+
+  // --- выбор списка ---
+  function progressOf(name) {
+    const subset = Lists.cardsFor(cards, name);
+    const s = sessions[name] && Deck.restore(sessions[name], subset);
+    return { total: subset.length, done: s ? Deck.done(s) : 0 };
+  }
+
+  function showPicker() {
+    const box = $('pickerList');
+    box.textContent = '';
+    for (const name of Lists.menuItems(cards)) {
+      const p = name === listName ? { total: Deck.total(state), done: Deck.done(state) } : progressOf(name);
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'pick' + (name === listName ? ' current' : '');
+      b.dataset.list = name;
+      const t = document.createElement('span'); t.textContent = Lists.label(name);
+      const n = document.createElement('span'); n.className = 'cnt'; n.textContent = p.done + ' / ' + p.total;
+      b.append(t, n);
+      b.addEventListener('click', () => { hidePicker(); preferred = name; openList(name); persist(); render(); });
+      box.append(b);
+    }
+    $('picker').hidden = false;
+    $('listBtn').setAttribute('aria-expanded', 'true');
+    const cur = box.querySelector('.current');
+    if (cur) cur.focus();
+  }
+  function hidePicker() {
+    $('picker').hidden = true;
+    $('listBtn').setAttribute('aria-expanded', 'false');
+  }
+
+  $('listBtn').addEventListener('click', () => ($('picker').hidden ? showPicker() : hidePicker()));
+  $('picker').addEventListener('click', (e) => { if (e.target === $('picker')) hidePicker(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('picker').hidden) hidePicker(); });
+
+  // --- карточка ---
+  $('face').addEventListener('click', () => update(Deck.flip(state)));
+  $('face').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); update(Deck.flip(state)); }
+  });
+  $('ipaBtn').addEventListener('click', () => update(Deck.toggleIpa(state)));
+  $('know').addEventListener('click', () => update(Deck.know(state)));
+  $('dontknow').addEventListener('click', () => update(Deck.dontKnow(state)));
+  $('restart').addEventListener('click', () => update(Deck.newSession(Lists.cardsFor(cards, listName))));
+
+  persist();
+  render();
+
+  // Подтягиваем свежие слова из таблицы; без сети остаются сохраненные.
+  async function refresh() {
+    try {
+      const fresh = await Sheet.fetchCards(window.fetch.bind(window));
+      store.set(WORDS_KEY, JSON.stringify(fresh));
+      setCards(fresh);
+      const items = Lists.menuItems(cards);
+      if (listName !== preferred && items.includes(preferred)) {
+        persist();
+        openList(preferred); // выбранный список появился после загрузки таблицы
+      } else if (items.includes(listName)) {
+        state = Deck.merge(state, Lists.cardsFor(cards, listName));
+      } else {
+        openList(Lists.ALL); // выбранный список исчез из таблицы
+      }
+      persist();
+      render();
+      if (!$('picker').hidden) showPicker();
+      setStatus('Слов в таблице: ' + cards.length);
+    } catch (e) {
+      setStatus('Нет связи с таблицей, слова из памяти телефона (' + cards.length + ')');
+    }
+  }
+  window.flashcardsReady = refresh();
+  window.addEventListener('online', refresh);
+
+  if ('serviceWorker' in navigator && window.isSecureContext && /^https?:/.test(location.protocol)) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+})();
+
+</script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+// Слова из колоды "Мои слова NNN". Без карточки-правила про -y -> -ily.
+const CARDS = [
+  { ru: "работать усердно", en: "work hard", ipa: "/wɜːk hɑːd/", read: "«уёк ХАД»" },
+  { ru: "сегодня вечером", en: "this evening / tonight", ipa: "/ðɪs ˈiːvnɪŋ/, /təˈnaɪt/", read: "«зис ИВнин», «тэНАЙТ»" },
+  { ru: "идёт дождь", en: "it rains / it's raining", ipa: "", read: "" },
+  { ru: "когда-либо", en: "ever", ipa: "/ˈevə/", read: "«Эвэ»" },
+  { ru: "тихо", en: "quietly", ipa: "/ˈkwaɪətli/", read: "«КВАЙэтли»" },
+  { ru: "невероятно", en: "incredibly", ipa: "/ɪnˈkredəbli/", read: "«инКРЭдэбли»" },
+  { ru: "полезно, здорово (о еде)", en: "healthily", ipa: "/ˈhelθɪli/", read: "«ХЭЛсили»" },
+  { ru: "идеально", en: "perfectly", ipa: "/ˈpɜːfɪktli/", read: "«ПЁфиктли»" },
+  { ru: "бегло", en: "fluently", ipa: "/ˈfluːəntli/", read: "«ФЛУэнтли»" },
+  { ru: "спокойно", en: "calmly", ipa: "/ˈkɑːmli/", read: "«КАМли» (l не читается)" },
+  { ru: "терпеливый / терпеливо", en: "patient / patiently", ipa: "/ˈpeɪʃnt/, /ˈpeɪʃntli/", read: "«ПЕЙшнт», «ПЕЙшнтли»" },
+  { ru: "очередь", en: "queue", ipa: "/kjuː/", read: "«кью»" },
+  { ru: "вести себя", en: "behave", ipa: "/bɪˈheɪv/", read: "«биХЕЙВ»" },
+  { ru: "кризис", en: "crisis", ipa: "/ˈkraɪsɪs/", read: "«КРАЙсис»" },
+  { ru: "относиться к, обращаться с", en: "treat", ipa: "/triːt/", read: "«трит» (без предлога)" },
+  { ru: "наступать", en: "tread", ipa: "/tred/", read: "«трэд»" },
+  { ru: "в начале месяца", en: "at the beginning of the month", ipa: "/bɪˈɡɪnɪŋ/", read: "«биГИнин»" },
+  { ru: "в конце месяца", en: "at the end of the month", ipa: "", read: "" },
+  { ru: "огромный", en: "huge", ipa: "/hjuːdʒ/", read: "«хьюдж»" },
+  { ru: "порция", en: "portion", ipa: "/ˈpɔːʃn/", read: "«ПОшн»" },
+  { ru: "следующие 40 лет", en: "for the next 40 years", ipa: "", read: "" },
+  { ru: "ездить верхом", en: "ride", ipa: "/raɪd/", read: "«райд»" },
+  { ru: "научиться что-то делать", en: "learn to do", ipa: "/lɜːn tə duː/", read: "«лён тэ ду»" },
+  { ru: "кто-нибудь; никто (в отрицании)", en: "anyone", ipa: "/ˈeniwʌn/", read: "«Эниуан»" },
+].map((c) => ({ ...c, lists: ["NNN"] }));
+if (typeof module !== 'undefined') module.exports = CARDS;

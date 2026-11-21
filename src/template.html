@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#2f6f5e">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Карточки English</title>
+<style>
+:root{--bg:#eef2f0;--card:#fff;--fg:#1d2a26;--muted:#5f716b;--accent:#2f6f5e;--no:#b5533c;--line:#d3ddd9;
+--display:Georgia,"Times New Roman",serif;--body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#141b19;--card:#1f2926;--fg:#e6eeeb;--muted:#9aaba5;--accent:#7cc4ae;--no:#e38a72;--line:#33423d;color-scheme:dark}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:16px var(--body);
+padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+main{max-width:480px;margin:0 auto;min-height:100%;display:flex;flex-direction:column;gap:14px}
+header{display:flex;justify-content:space-between;align-items:center;gap:10px}
+#listBtn{display:flex;align-items:center;gap:6px;min-width:0;padding:8px 12px;font:700 1.15rem var(--display);border-color:var(--line)}
+#listName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#listBtn .arr{font:600 .8rem var(--body);color:var(--muted)}
+#picker{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:flex-start;justify-content:center;
+padding:max(64px,env(safe-area-inset-top)) 16px 16px;z-index:10}
+#pickerBox{background:var(--card);border-radius:16px;width:100%;max-width:448px;max-height:75vh;overflow:auto;padding:8px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+#pickerBox h2{font:600 .8rem var(--body);color:var(--muted);margin:8px 10px 6px;text-transform:uppercase;letter-spacing:.04em}
+.pick{display:flex;justify-content:space-between;align-items:center;width:100%;gap:12px;text-align:left;border:0;border-radius:10px;padding:13px 12px;background:transparent}
+.pick.current{background:var(--bg);color:var(--accent)}
+.pick .cnt{color:var(--muted);font-weight:500;font-variant-numeric:tabular-nums;font-size:.9rem}
+#counter{color:var(--muted);font-weight:600;font-variant-numeric:tabular-nums}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+.card{flex:1;min-height:320px;background:var(--card);border:1px solid var(--line);border-radius:18px;
+display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px 20px;text-align:center}
+#face{cursor:pointer;width:100%;display:flex;flex-direction:column;align-items:center;gap:10px;padding:12px;border-radius:12px;-webkit-tap-highlight-color:transparent;user-select:none}
+#face:focus-visible,button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+#word{font:2rem/1.25 var(--display)}
+#face[data-side="en"] #word{color:var(--accent);font-weight:700}
+#hint{color:var(--muted);font-size:.85rem}
+/* место под кнопку/транскрипцию всегда зарезервировано, поэтому слово не сдвигается */
+#slot{height:76px;display:flex;align-items:flex-start;justify-content:center}
+#ipaBox{display:flex;flex-direction:column;gap:6px}
+#ipa{color:var(--muted);font-size:1.15rem}
+#read{font-size:1.2rem}
+button{font:600 1rem var(--body);padding:14px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
+button:disabled{opacity:.4;cursor:default}
+#ipaBtn{padding:10px 18px;border-color:var(--accent);color:var(--accent);background:transparent}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#know{background:var(--accent);border-color:var(--accent);color:var(--card)}
+#dontknow{color:var(--no);border-color:var(--no)}
+#restart{background:transparent}
+#status{margin:0;text-align:center;color:var(--muted);font-size:.75rem;line-height:1.4;height:1.4em;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+@media (prefers-reduced-motion:reduce){.bar i{transition:none}}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <button id="listBtn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="picker"><span id="listName"></span><span class="arr" aria-hidden="true">▼</span></button>
+    <span id="counter">1 / 1</span>
+  </header>
+  <div class="bar"><i id="fill"></i></div>
+  <section class="card">
+    <div id="face" role="button" tabindex="0" aria-live="polite" data-side="ru">
+      <div id="word"></div>
+      <div id="hint"></div>
+    </div>
+    <div id="slot">
+      <button id="ipaBtn" type="button" hidden aria-controls="ipaBox" aria-expanded="false">Транскрипция</button>
+      <div id="ipaBox" hidden><div id="ipa"></div><div id="read"></div></div>
+    </div>
+  </section>
+  <div class="row"><button id="dontknow" type="button">Не знаю</button><button id="know" type="button">Знаю</button></div>
+  <button id="restart" type="button">Заново</button>
+  <p id="status" aria-live="polite"></p>
+</main>
+<div id="picker" hidden role="dialog" aria-modal="true" aria-label="Выбор списка">
+  <div id="pickerBox"><h2>Список слов</h2><div id="pickerList"></div></div>
+</div>
+<script>
+/*DECK*/
+/*SHEET*/
+/*LISTS*/
+/*CARDS*/
+/*UI*/
+</script>
+</body>
+</html>
