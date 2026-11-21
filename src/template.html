@@ -37,7 +37,14 @@ padding:max(64px,env(safe-area-inset-top)) 16px 16px;z-index:10}
 .card{transition:transform .18s ease-out;will-change:transform;
 flex:1;min-height:320px;background:var(--card);border:1px solid var(--line);border-radius:18px;
 display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px 20px;text-align:center}
-#face{cursor:pointer;width:100%;display:flex;flex-direction:column;align-items:center;gap:10px;padding:12px;border-radius:12px;-webkit-tap-highlight-color:transparent;user-select:none}
+/* стрелки по бокам слова - только на компьютере (мышь), на телефоне листают смахиванием */
+.wordrow{display:flex;align-items:center;width:100%;gap:6px}
+.nav{display:none;flex:none;width:44px;height:44px;padding:0;border-radius:50%;font:400 1.9rem/1 var(--body);
+color:var(--muted);background:transparent;border:1px solid var(--line);align-items:center;justify-content:center}
+.nav:hover:not(:disabled){color:var(--accent);border-color:var(--accent)}
+.nav:disabled{opacity:.25;cursor:default}
+@media (hover:hover) and (pointer:fine){.nav{display:flex}}
+#face{cursor:pointer;flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:10px;padding:12px;border-radius:12px;-webkit-tap-highlight-color:transparent;user-select:none}
 #face:focus-visible,button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 #word{font:2rem/1.25 var(--display);max-width:100%;overflow-wrap:normal}
 #word,#ipa,#read{width:100%}
@@ -69,9 +76,13 @@ button:disabled{opacity:.4;cursor:default}
   </header>
   <div class="bar"><i id="fill"></i></div>
   <section class="card">
-    <div id="face" role="button" tabindex="0" aria-live="polite" data-side="ru">
-      <div id="word"></div>
-      <div id="hint"></div>
+    <div class="wordrow">
+      <button id="prev" class="nav" type="button" aria-label="Предыдущая карточка" title="Предыдущая карточка (←)">‹</button>
+      <div id="face" role="button" tabindex="0" aria-live="polite" data-side="ru">
+        <div id="word"></div>
+        <div id="hint"></div>
+      </div>
+      <button id="next" class="nav" type="button" aria-label="Следующая карточка" title="Следующая карточка (→)">›</button>
     </div>
     <div id="slot">
       <button id="ipaBtn" type="button" hidden aria-controls="ipaBox" aria-expanded="false">Транскрипция</button>

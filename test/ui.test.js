@@ -377,27 +377,46 @@ test('порог смахивания - 1/5 ширины карточки', asyn
   assert.equal(t.$('counter').textContent, '1 / 24');
 });
 
-test('клавиши: пробел - перевернуть, стрелка влево - дальше, стрелка вправо - назад', async () => {
+test('клавиши: пробел - перевернуть, стрелка вправо - дальше, стрелка влево - назад', async () => {
   const f = await open();
   key(f, ' ');
   assert.equal(f.$('face').dataset.side, 'en');
   key(f, ' ');
   assert.equal(f.$('face').dataset.side, 'ru');
   const t = await open({ storage: startWith(5) });
-  key(t, 'ArrowLeft'); await sleep(220);
+  key(t, 'ArrowRight'); await sleep(220);
   assert.equal(t.$('counter').textContent, '2 / 24');
-  key(t, 'ArrowLeft'); key(t, 'ArrowLeft'); await sleep(220); // двойное нажатие во время анимации
+  key(t, 'ArrowRight'); key(t, 'ArrowRight'); await sleep(220); // двойное нажатие во время анимации
   assert.equal(t.$('counter').textContent, '3 / 24', 'засчитано одно нажатие');
-  key(t, 'ArrowRight'); await sleep(220);
-  key(t, 'ArrowRight'); await sleep(220);
+  key(t, 'ArrowLeft'); await sleep(220);
+  key(t, 'ArrowLeft'); await sleep(220);
   assert.equal(t.word(), 'невероятно');
   assert.equal(t.$('counter').textContent, '1 / 24');
+});
+
+test('стрелки на экране: › - дальше, ‹ - назад; не переворачивают; недоступные выключены', async () => {
+  const sheet = '"Русский","Английский"\n"тихо","quietly"\n"окно","window"\n';
+  const t = await open({ sheet });
+  const first = t.word();
+  assert.equal(t.$('prev').disabled, true, 'назад некуда');
+  assert.equal(t.$('next').disabled, false);
+  t.$('next').click(); await sleep(220);
+  assert.equal(t.$('counter').textContent, '2 / 2');
+  assert.equal(t.$('face').dataset.side, 'ru', 'кнопка не переворачивает');
+  assert.equal(t.$('prev').disabled, false);
+  t.$('next').click(); await sleep(220);
+  assert.equal(t.word(), 'На сегодня все');
+  assert.equal(t.$('next').disabled, true, 'дальше некуда');
+  t.$('prev').click(); await sleep(220);
+  t.$('prev').click(); await sleep(220);
+  assert.equal(t.word(), first);
+  assert.equal(t.$('prev').disabled, true);
 });
 
 test('при открытом меню списков клавиши не трогают карточку', async () => {
   const t = await open();
   t.$('listBtn').click();
-  key(t, 'ArrowLeft'); key(t, ' '); await sleep(220);
+  key(t, 'ArrowRight'); key(t, ' '); await sleep(220);
   assert.equal(t.$('counter').textContent, '1 / 24');
   assert.equal(t.$('face').dataset.side, 'ru');
 });

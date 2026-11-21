@@ -108,6 +108,8 @@
     const finished = Srs.isFinished(state);
     $('counter').textContent = (finished ? total : Math.min(state.done + 1, total)) + ' / ' + total;
     $('fill').style.width = (total ? state.done / total * 100 : 0) + '%';
+    $('prev').disabled = !history.length;
+    $('next').disabled = finished;
 
     const ipaBtn = $('ipaBtn'), ipaBox = $('ipaBox'), hint = $('hint'), again = $('again');
 
@@ -206,16 +208,16 @@
 
   $('listBtn').addEventListener('click', () => ($('picker').hidden ? showPicker() : hidePicker()));
   $('picker').addEventListener('click', (e) => { if (e.target === $('picker')) hidePicker(); });
-  // Клавиатура (компьютер): пробел - перевернуть, стрелка влево - следующая карточка,
-  // стрелка вправо - вернуть предыдущую, Esc - закрыть меню списков.
+  // Клавиатура (компьютер) - как стрелки на экране: стрелка вправо - следующая карточка,
+  // стрелка влево - вернуть предыдущую, пробел - перевернуть, Esc - закрыть меню списков.
   document.addEventListener('keydown', (e) => {
     if (!$('picker').hidden) { if (e.key === 'Escape') hidePicker(); return; }
     if (e.ctrlKey || e.altKey || e.metaKey) return;
     if (e.key === ' ' || e.key === 'Spacebar') {
       if (e.target.closest && e.target.closest('button')) return; // пробел на кнопке - нажать кнопку
       e.preventDefault(); update(Srs.flip(state));
-    } else if (e.key === 'ArrowLeft') { e.preventDefault(); goNext(); }
-    else if (e.key === 'ArrowRight') { e.preventDefault(); goBack(); }
+    } else if (e.key === 'ArrowRight') { e.preventDefault(); goNext(); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); goBack(); }
   });
 
   // --- карточка ---
@@ -259,6 +261,8 @@
   }
   const goNext = () => { if (!Srs.isFinished(state)) slide(-1, answer); };
   const goBack = () => { if (history.length) slide(1, undo); };
+  $('next').addEventListener('click', goNext);
+  $('prev').addEventListener('click', goBack);
 
   function resetDrag() {
     sx = null; dragging = false;
