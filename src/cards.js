@@ -24,5 +24,5 @@ const CARDS = [
   { ru: "ездить верхом", en: "ride", ipa: "/raɪd/", read: "«райд»" },
   { ru: "научиться что-то делать", en: "learn to do", ipa: "/lɜːn tə duː/", read: "«лён тэ ду»" },
   { ru: "кто-нибудь; никто (в отрицании)", en: "anyone", ipa: "/ˈeniwʌn/", read: "«Эниуан»" },
-].map((c) => ({ ...c, lists: ["NNN"] }));
+].map((c) => ({ ...c, lists: ["Первый список"] }));
 if (typeof module !== 'undefined') module.exports = CARDS;
