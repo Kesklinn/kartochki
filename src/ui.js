@@ -97,9 +97,9 @@
     const t = Srs.nextDue(Lists.cardsFor(cards, listName), progress);
     if (t === null) return '';
     const days = Math.round((new Date(t).setHours(0, 0, 0, 0) - new Date(now()).setHours(0, 0, 0, 0)) / Srs.DAY);
-    if (days <= 0) return 'Есть слова к повторению.';
-    if (days === 1) return 'Следующее повторение - завтра.';
-    return 'Следующее повторение - через ' + days + ' ' + daysWord(days) + '.';
+    if (days <= 0) return 'Есть слова к повторению';
+    if (days === 1) return 'Следующий повтор - завтра';
+    return 'Следующий повтор - через\u00a0' + days + '\u00a0' + daysWord(days);
   }
 
   function render() {
@@ -111,21 +111,26 @@
     $('prev').disabled = !history.length;
     $('next').disabled = finished;
 
-    const ipaBtn = $('ipaBtn'), ipaBox = $('ipaBox'), hint = $('hint'), again = $('again');
+    const ipaBtn = $('ipaBtn'), ipaBox = $('ipaBox'), hint = $('hint'), doneBtns = $('doneBtns');
 
     if (finished) {
+      // Конец занятия: результат и куда идти дальше - еще раз этот список или другой.
       $('face').dataset.side = 'done';
       $('word').style.fontSize = '';
-      const empty = !Lists.cardsFor(cards, listName).length;
-      $('word').textContent = empty ? 'Пусто' : state.practice ? 'Готово!' : 'На сегодня все';
-      hint.textContent = empty ? 'В этом списке нет слов.' : whenNext();
-      hint.hidden = !hint.textContent;
+      const subset = Lists.cardsFor(cards, listName);
+      const empty = !subset.length;
+      $('word').textContent = empty ? 'Пусто' : 'Отлично!';
+      hint.textContent = empty ? 'В этом списке нет слов.'
+        : ('Выучено ' + Srs.learnedCount(subset, progress) + '\u00a0из\u00a0' + subset.length + '\n' + whenNext()).trim();
+      hint.hidden = false;
       ipaBtn.hidden = ipaBox.hidden = true;
-      again.hidden = empty;
+      doneBtns.hidden = false;
+      $('again').hidden = empty;
+      $('other').hidden = Lists.menuItems(cards).length < 2;
       return;
     }
 
-    again.hidden = true;
+    doneBtns.hidden = true;
     hint.hidden = true;
     const card = byKey.get(Srs.current(state));
     if (!state.flipped) {
@@ -322,6 +327,7 @@
   // На экране "на сегодня все": пройти список еще раз. Расписание раньше срока не сдвигается,
   // а забытые слова снова попадают на доучивание.
   $('again').addEventListener('click', () => { openList(listName, true); persist(); render(); });
+  $('other').addEventListener('click', () => showPicker());
 
   persist();
   render();

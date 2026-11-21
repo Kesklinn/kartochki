@@ -132,16 +132,18 @@ test('короткое смахивание, вправо или вертика�
   assert.equal(d.querySelector('.card').style.transform, '');
 });
 
-test('все вспомнил - "На сегодня все", дата повторения и "Повторить еще раз"', async () => {
+test('все вспомнил - "Отлично!", дата повторения и "Повторить еще раз"', async () => {
   const sheet = '"Русский","Английский"\n"тихо","quietly"\n"очередь","queue"\n';
   const t = await open({ sheet });
   await t.swipe(); await t.swipe();
-  assert.equal(t.word(), 'На сегодня все');
-  assert.match(t.$('hint').textContent, /через 3 дня/);
+  assert.equal(t.word(), 'Отлично!');
+  assert.match(t.$('hint').textContent, /через\s3\sдня/);
   assert.equal(t.$('again').hidden, false);
+  assert.match(t.$('hint').textContent, /Выучено 2\sиз\s2/);
+  assert.equal(t.$('other').hidden, true, 'другого списка нет - кнопки нет');
   // в тот же день, после перезапуска - все так же
   const t2 = await open({ storage: t.ls(), sheet });
-  assert.equal(t2.word(), 'На сегодня все');
+  assert.equal(t2.word(), 'Отлично!');
   // "Повторить еще раз" - снова все слова, расписание не сдвигается
   t2.$('again').click();
   assert.equal(t2.$('counter').textContent, '1 / 2');
@@ -156,8 +158,8 @@ test('через 3 дня слова снова в занятии', async () => 
   const t = await open({ sheet });
   await t.swipe(); await t.swipe();
   const t2 = await open({ storage: t.ls(), sheet, now: T0 + 1 * S.DAY });
-  assert.equal(t2.word(), 'На сегодня все');
-  assert.match(t2.$('hint').textContent, /через 2 дня/);
+  assert.equal(t2.word(), 'Отлично!');
+  assert.match(t2.$('hint').textContent, /через\s2\sдня/);
   const t3 = await open({ storage: t.ls(), sheet, now: T0 + 3 * S.DAY });
   assert.equal(t3.$('counter').textContent, '1 / 2');
 });
@@ -167,7 +169,7 @@ test('приложение висело в фоне до следующего д
   const t = await open({ sheet });
   t.$('face').click(); await t.swipe(); // забыл
   await t.swipe(); await t.swipe();     // шаг 1 и шаг 2 доучивания
-  assert.equal(t.word(), 'На сегодня все');
+  assert.equal(t.word(), 'Отлично!');
   t.w.__now = T0 + S.DAY;
   t.w.__setVis('hidden'); t.d.dispatchEvent(new t.w.Event('visibilitychange'));
   t.w.__setVis('visible'); t.d.dispatchEvent(new t.w.Event('visibilitychange'));
@@ -351,12 +353,12 @@ test('вернул карточку, ответ которой уже видел
   assert.equal(p.lvl, 0, 'засчитано как "не помню"');
 });
 
-test('возврат на несколько карточек назад и с экрана "На сегодня все"', async () => {
+test('возврат на несколько карточек назад и с экрана "Отлично!"', async () => {
   const sheet = '"Русский","Английский"\n"тихо","quietly"\n"очередь","queue"\n"окно","window"\n';
   const t = await open({ sheet });
   const seen = [];
   for (let i = 0; i < 3; i++) { seen.push(t.word()); await t.swipe(); }
-  assert.equal(t.word(), 'На сегодня все');
+  assert.equal(t.word(), 'Отлично!');
   await swipeTo(t, +150); assert.equal(t.word(), seen[2]);
   await swipeTo(t, +150); assert.equal(t.word(), seen[1]);
   await swipeTo(t, +150); assert.equal(t.word(), seen[0]);
@@ -405,7 +407,7 @@ test('стрелки на экране: › - дальше, ‹ - назад; н
   assert.equal(t.$('face').dataset.side, 'ru', 'кнопка не переворачивает');
   assert.equal(t.$('prev').disabled, false);
   t.$('next').click(); await sleep(220);
-  assert.equal(t.word(), 'На сегодня все');
+  assert.equal(t.word(), 'Отлично!');
   assert.equal(t.$('next').disabled, true, 'дальше некуда');
   t.$('prev').click(); await sleep(220);
   t.$('prev').click(); await sleep(220);
@@ -428,4 +430,18 @@ test('возврат работает только в пределах заня�
   const before = t.$('counter').textContent;
   await swipeTo(t, +150);
   assert.equal(t.$('counter').textContent, before);
+});
+
+test('конец списка: "Другой список" открывает меню, выбор открывает список', async () => {
+  const t = await open({ sheet: LISTS_CSV });
+  t.$('listBtn').click(); t.d.querySelector('.pick[data-list="Урок 5"]').click();
+  await t.swipe(); await t.swipe();
+  assert.equal(t.word(), 'Отлично!');
+  assert.equal(t.$('other').hidden, false);
+  t.$('other').click();
+  assert.equal(t.$('picker').hidden, false);
+  assert.equal(t.$('face').dataset.side, 'done', 'кнопка не переворачивает');
+  t.d.querySelector('.pick[data-list="__none__"]').click();
+  assert.equal(t.$('listName').textContent, 'Без списка');
+  assert.equal(t.word(), 'окно');
 });

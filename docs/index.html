@@ -49,7 +49,7 @@ color:var(--muted);background:transparent;border:1px solid var(--line);align-ite
 #word{font:2rem/1.25 var(--display);max-width:100%;overflow-wrap:normal}
 #word,#ipa,#read{width:100%}
 #face[data-side="en"] #word{color:var(--accent);font-weight:700}
-#hint{color:var(--muted);font-size:.85rem}
+#hint{color:var(--muted);font-size:.85rem;white-space:pre-line;line-height:1.5}
 /* место под кнопку/транскрипцию всегда зарезервировано, поэтому слово не сдвигается */
 #slot{height:112px;display:flex;align-items:flex-start;justify-content:center}
 #ipaBox{display:flex;flex-direction:column;gap:6px}
@@ -58,7 +58,8 @@ color:var(--muted);background:transparent;border:1px solid var(--line);align-ite
 .seg{display:inline-block;white-space:nowrap}
 button{font:600 1rem var(--body);padding:14px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
 button:disabled{opacity:.4;cursor:default}
-#ipaBtn,#again{padding:10px 18px;border-color:var(--accent);color:var(--accent);background:transparent}
+#doneBtns{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
+#ipaBtn,#again,#other{padding:10px 18px;border-color:var(--accent);color:var(--accent);background:transparent}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 #know{background:var(--accent);border-color:var(--accent);color:var(--card)}
 #dontknow{color:var(--no);border-color:var(--no)}
@@ -87,7 +88,10 @@ button:disabled{opacity:.4;cursor:default}
     <div id="slot">
       <button id="ipaBtn" type="button" hidden aria-controls="ipaBox" aria-expanded="false">Транскрипция</button>
       <div id="ipaBox" hidden><div id="ipa"></div><div id="read"></div></div>
-      <button id="again" type="button" hidden>Повторить еще раз</button>
+      <div id="doneBtns" hidden>
+        <button id="again" type="button">Повторить еще раз</button>
+        <button id="other" type="button">Другой список</button>
+      </div>
     </div>
   </section>
   <p id="status" aria-live="polite"></p>
@@ -520,9 +524,9 @@ const CARDS = [
     const t = Srs.nextDue(Lists.cardsFor(cards, listName), progress);
     if (t === null) return '';
     const days = Math.round((new Date(t).setHours(0, 0, 0, 0) - new Date(now()).setHours(0, 0, 0, 0)) / Srs.DAY);
-    if (days <= 0) return 'Есть слова к повторению.';
-    if (days === 1) return 'Следующее повторение - завтра.';
-    return 'Следующее повторение - через ' + days + ' ' + daysWord(days) + '.';
+    if (days <= 0) return 'Есть слова к повторению';
+    if (days === 1) return 'Следующий повтор - завтра';
+    return 'Следующий повтор - через\u00a0' + days + '\u00a0' + daysWord(days);
   }
 
   function render() {
@@ -534,21 +538,26 @@ const CARDS = [
     $('prev').disabled = !history.length;
     $('next').disabled = finished;
 
-    const ipaBtn = $('ipaBtn'), ipaBox = $('ipaBox'), hint = $('hint'), again = $('again');
+    const ipaBtn = $('ipaBtn'), ipaBox = $('ipaBox'), hint = $('hint'), doneBtns = $('doneBtns');
 
     if (finished) {
+      // Конец занятия: результат и куда идти дальше - еще раз этот список или другой.
       $('face').dataset.side = 'done';
       $('word').style.fontSize = '';
-      const empty = !Lists.cardsFor(cards, listName).length;
-      $('word').textContent = empty ? 'Пусто' : state.practice ? 'Готово!' : 'На сегодня все';
-      hint.textContent = empty ? 'В этом списке нет слов.' : whenNext();
-      hint.hidden = !hint.textContent;
+      const subset = Lists.cardsFor(cards, listName);
+      const empty = !subset.length;
+      $('word').textContent = empty ? 'Пусто' : 'Отлично!';
+      hint.textContent = empty ? 'В этом списке нет слов.'
+        : ('Выучено ' + Srs.learnedCount(subset, progress) + '\u00a0из\u00a0' + subset.length + '\n' + whenNext()).trim();
+      hint.hidden = false;
       ipaBtn.hidden = ipaBox.hidden = true;
-      again.hidden = empty;
+      doneBtns.hidden = false;
+      $('again').hidden = empty;
+      $('other').hidden = Lists.menuItems(cards).length < 2;
       return;
     }
 
-    again.hidden = true;
+    doneBtns.hidden = true;
     hint.hidden = true;
     const card = byKey.get(Srs.current(state));
     if (!state.flipped) {
@@ -745,6 +754,7 @@ const CARDS = [
   // На экране "на сегодня все": пройти список еще раз. Расписание раньше срока не сдвигается,
   // а забытые слова снова попадают на доучивание.
   $('again').addEventListener('click', () => { openList(listName, true); persist(); render(); });
+  $('other').addEventListener('click', () => showPicker());
 
   persist();
   render();
