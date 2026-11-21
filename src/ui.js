@@ -163,7 +163,8 @@
       if (!$('picker').hidden) showPicker();
       setStatus('Слов в таблице: ' + cards.length);
     } catch (e) {
-      setStatus('Нет связи с таблицей, слова из памяти телефона (' + cards.length + ')');
+      // причина в скобках - чтобы по скриншоту было видно, что именно не так
+      setStatus('Нет связи с таблицей, слова из памяти телефона (' + cards.length + ') [' + (e && e.message || e) + ']');
     }
   }
   window.flashcardsReady = refresh();
