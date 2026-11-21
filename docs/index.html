@@ -450,7 +450,10 @@ const CARDS = [
   let listName = preferred;
 
   let state;
+  const UNDO_MAX = 20;
+  let history = []; // для возврата смахнутых карточек: [{ state, key, had, rec }]
   function openList(name, practice = false) {
+    history = []; // возврат работает только в пределах одного занятия
     if (!Lists.menuItems(cards).includes(name)) name = Lists.ALL;
     listName = name;
     const subset = Lists.cardsFor(cards, name);
@@ -558,10 +561,27 @@ const CARDS = [
   function update(next) { state = next; persist(); render(); }
 
   // Смахивание: "помню", если карточку не переворачивали, иначе "не помню".
+  // Перед каждым ответом запоминаем, как было, чтобы его можно было отменить.
   function answer() {
+    if (Srs.isFinished(state)) return;
+    const key = Srs.current(state);
+    history.push({ state, key, had: key in progress, rec: progress[key] });
+    if (history.length > UNDO_MAX) history.shift();
     const r = Srs.swipe(state, progress, now());
     progress = r.progress;
     update(r.s);
+  }
+
+  // Вернуть предыдущую карточку: занятие и запись прогресса этого слова - как до смахивания.
+  // Карточка возвращается русской стороной; если ответ уже видели, это остается "не помню".
+  function undo() {
+    const h = history.pop();
+    if (!h) return false;
+    progress = { ...progress };
+    if (h.had) progress[h.key] = h.rec; else delete progress[h.key];
+    const back = { ...h.state, flipped: false, ipaShown: false };
+    update(Srs.merge(back, Lists.cardsFor(cards, listName), progress)); // слова могли обновиться
+    return true;
   }
 
   // --- выбор списка ---
@@ -598,7 +618,17 @@ const CARDS = [
 
   $('listBtn').addEventListener('click', () => ($('picker').hidden ? showPicker() : hidePicker()));
   $('picker').addEventListener('click', (e) => { if (e.target === $('picker')) hidePicker(); });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('picker').hidden) hidePicker(); });
+  // Клавиатура (компьютер): пробел - перевернуть, стрелка влево - следующая карточка,
+  // стрелка вправо - вернуть предыдущую, Esc - закрыть меню списков.
+  document.addEventListener('keydown', (e) => {
+    if (!$('picker').hidden) { if (e.key === 'Escape') hidePicker(); return; }
+    if (e.ctrlKey || e.altKey || e.metaKey) return;
+    if (e.key === ' ' || e.key === 'Spacebar') {
+      if (e.target.closest && e.target.closest('button')) return; // пробел на кнопке - нажать кнопку
+      e.preventDefault(); update(Srs.flip(state));
+    } else if (e.key === 'ArrowLeft') { e.preventDefault(); goNext(); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); goBack(); }
+  });
 
   // --- карточка ---
   // Переворот - тап в любое место экрана, кроме кнопок (транскрипция, выбор списка,
@@ -613,11 +643,34 @@ const CARDS = [
     if (flippable(e.target)) update(Srs.flip(state));
   });
 
-  // Смахивание влево - следующая карточка; оценку ставит answer().
+  // Смахивание влево - следующая карточка (оценку ставит answer()),
+  // вправо - вернуть предыдущую (undo()). Срабатывает от 1/5 ширины карточки.
   const cardEl = document.querySelector('.card');
   const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   let sx = null, sy = 0, dragging = false;
-  const threshold = () => Math.max(60, (cardEl.clientWidth || 300) * 0.22);
+  const threshold = () => Math.max(50, (cardEl.clientWidth || 300) / 5);
+
+  // Анимации: текущая карточка улетает в сторону dir (-1 влево, +1 вправо),
+  // новая въезжает с противоположной стороны.
+  let sliding = false; // пока карточка улетает, второе нажатие не засчитывается
+  function slide(dir, action) {
+    if (sliding) return;
+    if (reduceMotion) { cardEl.style.transform = ''; action(); return; }
+    sliding = true;
+    cardEl.classList.remove('dragging');
+    cardEl.style.transform = 'translateX(' + dir * 120 + '%) rotate(' + dir * 8 + 'deg)';
+    setTimeout(() => {
+      sliding = false;
+      action();
+      cardEl.classList.add('dragging'); // без анимации ставим новую карточку с другой стороны
+      cardEl.style.transform = 'translateX(' + -dir * 40 + 'px)';
+      void cardEl.offsetWidth;
+      cardEl.classList.remove('dragging');
+      cardEl.style.transform = '';
+    }, 180);
+  }
+  const goNext = () => { if (!Srs.isFinished(state)) slide(-1, answer); };
+  const goBack = () => { if (history.length) slide(1, undo); };
 
   function resetDrag() {
     sx = null; dragging = false;
@@ -631,8 +684,7 @@ const CARDS = [
     if (e.isPrimary === false || e.button > 0) return;
     if (!flippable(e.target)) return;
     tapStart = { x: e.clientX, y: e.clientY, t: Date.now() };
-    if (Srs.isFinished(state)) return;
-    sx = e.clientX; sy = e.clientY; dragging = false;
+    sx = e.clientX; sy = e.clientY; dragging = false; // на экране "на сегодня все" - только вправо, назад
   });
   document.addEventListener('pointermove', (e) => {
     if (sx === null) return;
@@ -642,7 +694,9 @@ const CARDS = [
       cardEl.classList.add('dragging');
     }
     if (dragging) {
-      const x = Math.min(dx, 0) + Math.max(dx, 0) * 0.15; // вправо - только легкая "резинка"
+      // куда можно уйти - идет за пальцем, куда нельзя - только легкая "резинка"
+      const canLeft = !Srs.isFinished(state), canRight = history.length > 0;
+      const x = (dx < 0 ? (canLeft ? 1 : 0.15) : (canRight ? 1 : 0.15)) * dx;
       cardEl.style.transform = 'translateX(' + x + 'px) rotate(' + x / 40 + 'deg)';
     }
   });
@@ -663,22 +717,14 @@ const CARDS = [
     if (!wasDrag) { cardEl.style.transform = ''; return; }
     suppressClick = true;
     setTimeout(() => { suppressClick = false; }, 400);
-    if (dx > -threshold()) { cardEl.style.transform = ''; return; } // не дотянули - назад
-    if (reduceMotion) { cardEl.style.transform = ''; answer(); return; }
-    cardEl.style.transform = 'translateX(-120%) rotate(-8deg)';
-    setTimeout(() => {
-      answer();
-      cardEl.classList.add('dragging'); // без анимации ставим новую карточку чуть правее
-      cardEl.style.transform = 'translateX(40px)';
-      void cardEl.offsetWidth;
-      cardEl.classList.remove('dragging');
-      cardEl.style.transform = '';
-    }, 180);
+    if (dx <= -threshold() && !Srs.isFinished(state)) slide(-1, answer);
+    else if (dx >= threshold() && history.length) slide(1, undo);
+    else cardEl.style.transform = ''; // не дотянули или некуда - назад на место
   });
   document.addEventListener('pointercancel', () => { tapStart = null; resetDrag(); });
 
   $('face').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); update(Srs.flip(state)); }
+    if (e.key === 'Enter') { e.preventDefault(); update(Srs.flip(state)); }
   });
   $('ipaBtn').addEventListener('click', () => update(Srs.toggleIpa(state)));
   // На экране "на сегодня все": пройти список еще раз. Расписание раньше срока не сдвигается,

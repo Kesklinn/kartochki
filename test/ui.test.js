@@ -57,7 +57,7 @@ test('старт: русское слово, без подсказки и без
   const { $, word, d } = await open();
   assert.ok(byRu(word()));
   assert.equal($('hint').hidden, true);
-  assert.equal(d.body.textContent.includes('перевернуть'), false);
+  assert.equal(d.querySelector('main').textContent.includes('перевернуть'), false);
   assert.equal($('ipaBtn').hidden, true);
   assert.equal($('counter').textContent, '1 / 24');
 });
@@ -322,4 +322,91 @@ test('тап пальцем переворачивает один раз, даж
   assert.equal($('face').dataset.side, 'en', 'перевернулось на отпускании пальца');
   card.click(); // click от того же тапа
   assert.equal($('face').dataset.side, 'en', 'и не перевернулось обратно');
+});
+
+// --- возврат карточки, клавиатура, порог 1/5 ---
+const swipeTo = async (t, dx) => { t.ptr('pointerdown', 200); t.ptr('pointermove', 200 + dx / 2); t.ptr('pointermove', 200 + dx); t.ptr('pointerup', 200 + dx); await sleep(220); };
+const key = (t, k) => t.d.dispatchEvent(new t.w.KeyboardEvent('keydown', { key: k, bubbles: true }));
+
+test('смахивание вправо возвращает предыдущую карточку и отменяет оценку', async () => {
+  const t = await open({ storage: startWith(5) }); // невероятно
+  await t.swipe();
+  assert.equal(t.$('counter').textContent, '2 / 24');
+  assert.ok(JSON.parse(t.w.localStorage.getItem(PROG))[S.keyOf(CARDS[5])], 'оценка записана');
+  await swipeTo(t, +150);
+  assert.equal(t.word(), 'невероятно');
+  assert.equal(t.$('counter').textContent, '1 / 24');
+  assert.equal(JSON.parse(t.w.localStorage.getItem(PROG))[S.keyOf(CARDS[5])], undefined, 'оценка отменена');
+});
+
+test('вернул карточку, ответ которой уже видел - она все равно "не помню"', async () => {
+  const t = await open({ storage: startWith(5) });
+  t.d.querySelector('.card').click();        // посмотрел ответ
+  await t.swipe();                            // не помню
+  await swipeTo(t, +150);                     // вернул
+  assert.equal(t.word(), 'невероятно');
+  assert.equal(t.$('face').dataset.side, 'ru', 'вернулась русской стороной');
+  await t.swipe();                            // смахнул, не переворачивая
+  const p = JSON.parse(t.w.localStorage.getItem(PROG))[S.keyOf(CARDS[5])];
+  assert.equal(p.lvl, 0, 'засчитано как "не помню"');
+});
+
+test('возврат на несколько карточек назад и с экрана "На сегодня все"', async () => {
+  const sheet = '"Русский","Английский"\n"тихо","quietly"\n"очередь","queue"\n"окно","window"\n';
+  const t = await open({ sheet });
+  const seen = [];
+  for (let i = 0; i < 3; i++) { seen.push(t.word()); await t.swipe(); }
+  assert.equal(t.word(), 'На сегодня все');
+  await swipeTo(t, +150); assert.equal(t.word(), seen[2]);
+  await swipeTo(t, +150); assert.equal(t.word(), seen[1]);
+  await swipeTo(t, +150); assert.equal(t.word(), seen[0]);
+  await swipeTo(t, +150); assert.equal(t.word(), seen[0], 'дальше начала занятия некуда');
+  assert.equal(t.w.localStorage.getItem(PROG), '{}', 'все оценки отменены');
+});
+
+test('порог смахивания - 1/5 ширины карточки', async () => {
+  const t = await open();
+  Object.defineProperty(t.d.querySelector('.card'), 'clientWidth', { get: () => 350 }); // порог 70 px
+  await swipeTo(t, -65);
+  assert.equal(t.$('counter').textContent, '1 / 24', '65 px - мало');
+  await swipeTo(t, -75);
+  assert.equal(t.$('counter').textContent, '2 / 24', '75 px - достаточно');
+  await swipeTo(t, +65);
+  assert.equal(t.$('counter').textContent, '2 / 24');
+  await swipeTo(t, +75);
+  assert.equal(t.$('counter').textContent, '1 / 24');
+});
+
+test('клавиши: пробел - перевернуть, стрелка влево - дальше, стрелка вправо - назад', async () => {
+  const f = await open();
+  key(f, ' ');
+  assert.equal(f.$('face').dataset.side, 'en');
+  key(f, ' ');
+  assert.equal(f.$('face').dataset.side, 'ru');
+  const t = await open({ storage: startWith(5) });
+  key(t, 'ArrowLeft'); await sleep(220);
+  assert.equal(t.$('counter').textContent, '2 / 24');
+  key(t, 'ArrowLeft'); key(t, 'ArrowLeft'); await sleep(220); // двойное нажатие во время анимации
+  assert.equal(t.$('counter').textContent, '3 / 24', 'засчитано одно нажатие');
+  key(t, 'ArrowRight'); await sleep(220);
+  key(t, 'ArrowRight'); await sleep(220);
+  assert.equal(t.word(), 'невероятно');
+  assert.equal(t.$('counter').textContent, '1 / 24');
+});
+
+test('при открытом меню списков клавиши не трогают карточку', async () => {
+  const t = await open();
+  t.$('listBtn').click();
+  key(t, 'ArrowLeft'); key(t, ' '); await sleep(220);
+  assert.equal(t.$('counter').textContent, '1 / 24');
+  assert.equal(t.$('face').dataset.side, 'ru');
+});
+
+test('возврат работает только в пределах занятия: другой список - история сброшена', async () => {
+  const t = await open({ sheet: LISTS_CSV });
+  await t.swipe();
+  t.$('listBtn').click(); t.d.querySelector('.pick[data-list="Урок 5"]').click();
+  const before = t.$('counter').textContent;
+  await swipeTo(t, +150);
+  assert.equal(t.$('counter').textContent, before);
 });
