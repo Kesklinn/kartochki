@@ -9,7 +9,7 @@ const dist = path.join(__dirname, 'docs');
 fs.mkdirSync(dist, { recursive: true });
 
 const html = read('template.html')
-  .replace('/*DECK*/', () => strip(read('deck.js')))
+  .replace('/*SRS*/', () => strip(read('srs.js')))
   .replace('/*SHEET*/', () => strip(read('sheet.js')))
   .replace('/*LISTS*/', () => strip(read('lists.js')))
   .replace('/*CARDS*/', () => strip(read('cards.js')))

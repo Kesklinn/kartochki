@@ -1,40 +1,59 @@
-// Проверка собранной страницы в jsdom: клики, транскрипция, сохранение, загрузка из таблицы.
+// Проверка собранной страницы в jsdom: тапы, смахивание, транскрипция, списки, таблица, повторение.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { JSDOM } = require('jsdom');
 const CARDS = require('../src/cards.js');
-const D = require('../src/deck.js');
+const S = require('../src/srs.js');
 
 const html = fs.readFileSync(path.join(__dirname, '..', 'docs', 'index.html'), 'utf8');
-const KEY = 'nnn-flashcards-v3';
+const SESS = 'nnn-srs-sessions-v1';
+const PROG = 'nnn-srs-progress-v1';
+const T0 = new Date(2026, 10, 21, 12, 0).getTime();
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function open({ storage, sheet } = {}) {
+async function open({ storage, sheet, now = T0 } = {}) {
   const dom = new JSDOM(html, {
     runScripts: 'dangerously',
     url: 'https://example.test/',
     beforeParse(win) {
       if (storage) for (const [k, v] of Object.entries(storage)) win.localStorage.setItem(k, v);
       win.fetch = sheet
-        ? async () => ({ ok: true, status: 200, text: async () => sheet })
+        ? async () => ({ ok: true, status: 200, text: async () => (typeof sheet === 'function' ? sheet() : sheet) })
         : async () => { throw new Error('offline'); };
+      win.__now = now;
+      win.Date.now = () => win.__now;
+      let vis = 'visible';
+      Object.defineProperty(win.document, 'visibilityState', { get: () => vis });
+      win.__setVis = (v) => { vis = v; };
     },
   });
   await dom.window.flashcardsReady;
-  const d = dom.window.document;
+  const w = dom.window, d = w.document;
   const $ = (id) => d.getElementById(id);
-  return { dom, d, $, word: () => $('word').textContent };
+  const ptr = (type, x, y = 300) => d.querySelector('.card').dispatchEvent(new w.MouseEvent(type, { bubbles: true, clientX: x, clientY: y, button: 0 }));
+  const swipe = async () => { ptr('pointerdown', 300); ptr('pointermove', 250); ptr('pointermove', 100); ptr('pointerup', 100); await sleep(220); };
+  const ls = () => ({ [SESS]: w.localStorage.getItem(SESS), [PROG]: w.localStorage.getItem(PROG) });
+  return { dom, w, d, $, ptr, swipe, ls, word: () => $('word').textContent, side: () => $('face').dataset.side };
 }
 
 const byRu = (t) => CARDS.find((c) => c.ru === t);
+// Занятие, где первым идет слово с номером i из встроенных
 const startWith = (i) => {
-  const keys = CARDS.map(D.keyOf);
-  const sess = JSON.stringify({ v: 2, queue: [keys[i], ...keys.filter((_, j) => j !== i)], doneKeys: [] });
-  return JSON.stringify({ current: '__all__', sessions: { __all__: sess } });
+  const keys = CARDS.map(S.keyOf);
+  const sess = { v: 4, day: S.dayOf(T0), practice: false, queue: [keys[i], ...keys.filter((_, j) => j !== i)], steps: {}, total: keys.length, done: 0 };
+  return { [SESS]: JSON.stringify({ current: '__all__', sessions: { __all__: JSON.stringify(sess) } }) };
 };
 
-test('старт: русское слово, без подсказки и без кнопки', async () => {
+test('кнопок "Знаю", "Не знаю", "Заново" нет', async () => {
+  const { $ } = await open();
+  assert.equal($('know'), null);
+  assert.equal($('dontknow'), null);
+  assert.equal($('restart'), null);
+});
+
+test('старт: русское слово, без подсказки и без кнопки транскрипции', async () => {
   const { $, word, d } = await open();
   assert.ok(byRu(word()));
   assert.equal($('hint').hidden, true);
@@ -43,144 +62,140 @@ test('старт: русское слово, без подсказки и без
   assert.equal($('counter').textContent, '1 / 24');
 });
 
-test('кнопка исчезает, на ее месте транскрипция; после переворота снова кнопка', async () => {
-  const { $, word } = await open({ storage: { [KEY]: startWith(5) } }); // невероятно
-  const card = CARDS[5];
-  assert.equal(word(), card.ru);
-  $('face').click();
-  assert.equal(word(), card.en);
-  assert.equal($('ipaBtn').hidden, false);
-  assert.equal($('ipaBox').hidden, true);
-  $('ipaBtn').click();
+test('тап в любое место экрана переворачивает, кроме кнопок', async () => {
+  const { $, d, side } = await open({ storage: startWith(5) }); // невероятно
+  d.querySelector('.card').click(); assert.equal(side(), 'en');
+  d.querySelector('main').click(); assert.equal(side(), 'ru');
+  $('status').click(); assert.equal(side(), 'en');
+  $('ipaBtn').click(); assert.equal(side(), 'en', 'кнопка транскрипции не переворачивает');
   assert.equal($('ipaBtn').hidden, true);
   assert.equal($('ipaBox').hidden, false);
+  $('ipaBox').click(); assert.equal(side(), 'ru', 'тап по транскрипции переворачивает');
+  $('listBtn').click(); d.querySelector('.pick').click();
+  assert.equal(side(), 'ru', 'меню списков не переворачивает');
+});
+
+test('транскрипция: кнопка исчезает, на ее месте транскрипция; после переворота снова кнопка', async () => {
+  const { $, word, d } = await open({ storage: startWith(5) });
+  const card = CARDS[5];
+  d.querySelector('.card').click();
+  assert.equal(word(), card.en);
+  $('ipaBtn').click();
   assert.equal($('ipa').textContent, card.ipa);
   assert.equal($('read').textContent, card.read);
-  assert.equal(word(), card.en);
-  $('face').click(); $('face').click();
+  d.querySelector('.card').click(); d.querySelector('.card').click();
   assert.equal($('ipaBtn').hidden, false);
   assert.equal($('ipaBox').hidden, true);
 });
 
 test('для слов без транскрипции кнопки нет', async () => {
-  const { $, word } = await open({ storage: { [KEY]: startWith(2) } });
+  const { $, word, d } = await open({ storage: startWith(2) });
   assert.equal(word(), 'идёт дождь');
-  $('face').click();
+  d.querySelector('.card').click();
   assert.equal($('ipaBtn').hidden, true);
+});
+
+test('смахнул, не переворачивая = помню: слово уходит до следующего повторения', async () => {
+  const { $, word, swipe, w } = await open({ storage: startWith(5) });
+  await swipe();
+  assert.equal($('counter').textContent, '2 / 24');
+  assert.notEqual(word(), 'невероятно');
+  const p = JSON.parse(w.localStorage.getItem(PROG));
+  const k = S.keyOf(CARDS[5]);
+  assert.equal(p[k].lvl, 2);
+  assert.equal(Math.round((p[k].due - T0) / S.DAY), 3, 'через 3 дня');
+});
+
+test('перевернул и смахнул = не помню: слово вернется через 3 карточки, счетчик не растет', async () => {
+  const { $, word, swipe, d } = await open({ storage: startWith(5) });
+  d.querySelector('.card').click(); // посмотрел ответ
+  await swipe();
+  assert.equal($('counter').textContent, '1 / 24');
+  assert.equal($('face').dataset.side, 'ru', 'следующая карточка русской стороной');
+  for (let i = 0; i < 3; i++) await swipe();
+  assert.equal(word(), 'невероятно');
+  assert.equal($('counter').textContent, '4 / 24');
+});
+
+test('click после жеста карточку не переворачивает', async () => {
+  const { $, d, swipe } = await open();
+  await swipe();
+  d.querySelector('.card').click();
+  assert.equal($('face').dataset.side, 'ru');
+});
+
+test('короткое смахивание, вправо или вертикальное - ничего не происходит', async () => {
+  const { $, ptr, d } = await open();
+  const go = async (x0, x1, y0 = 300, y1 = 300) => { ptr('pointerdown', x0, y0); ptr('pointermove', x1, y1); ptr('pointerup', x1, y1); await sleep(220); };
+  await go(300, 270); await go(100, 300); await go(200, 190, 100, 400);
+  assert.equal($('counter').textContent, '1 / 24');
+  assert.equal(d.querySelector('.card').style.transform, '');
+});
+
+test('все вспомнил - "На сегодня все", дата повторения и "Повторить еще раз"', async () => {
+  const sheet = '"Русский","Английский"\n"тихо","quietly"\n"очередь","queue"\n';
+  const t = await open({ sheet });
+  await t.swipe(); await t.swipe();
+  assert.equal(t.word(), 'На сегодня все');
+  assert.match(t.$('hint').textContent, /через 3 дня/);
+  assert.equal(t.$('again').hidden, false);
+  // в тот же день, после перезапуска - все так же
+  const t2 = await open({ storage: t.ls(), sheet });
+  assert.equal(t2.word(), 'На сегодня все');
+  // "Повторить еще раз" - снова все слова, расписание не сдвигается
+  t2.$('again').click();
+  assert.equal(t2.$('counter').textContent, '1 / 2');
+  assert.equal(t2.$('face').dataset.side, 'ru', 'кнопка не переворачивает');
+  const before = t2.w.localStorage.getItem(PROG);
+  await t2.swipe();
+  assert.equal(t2.w.localStorage.getItem(PROG), before);
+});
+
+test('через 3 дня слова снова в занятии', async () => {
+  const sheet = '"Русский","Английский"\n"тихо","quietly"\n"очередь","queue"\n';
+  const t = await open({ sheet });
+  await t.swipe(); await t.swipe();
+  const t2 = await open({ storage: t.ls(), sheet, now: T0 + 1 * S.DAY });
+  assert.equal(t2.word(), 'На сегодня все');
+  assert.match(t2.$('hint').textContent, /через 2 дня/);
+  const t3 = await open({ storage: t.ls(), sheet, now: T0 + 3 * S.DAY });
+  assert.equal(t3.$('counter').textContent, '1 / 2');
+});
+
+test('приложение висело в фоне до следующего дня - при возвращении новое занятие', async () => {
+  const sheet = '"Русский","Английский"\n"тихо","quietly"\n';
+  const t = await open({ sheet });
+  t.$('face').click(); await t.swipe(); // забыл
+  await t.swipe(); await t.swipe();     // шаг 1 и шаг 2 доучивания
+  assert.equal(t.word(), 'На сегодня все');
+  t.w.__now = T0 + S.DAY;
+  t.w.__setVis('hidden'); t.d.dispatchEvent(new t.w.Event('visibilitychange'));
+  t.w.__setVis('visible'); t.d.dispatchEvent(new t.w.Event('visibilitychange'));
+  await t.w.flashcardsReady;
+  assert.equal(t.word(), 'тихо');
 });
 
 test('прогресс переживает перезагрузку', async () => {
   const t = await open();
-  t.$('know').click(); t.$('know').click();
+  await t.swipe(); await t.swipe();
   assert.equal(t.$('counter').textContent, '3 / 24');
-  const t2 = await open({ storage: { [KEY]: t.dom.window.localStorage.getItem(KEY) } });
+  const t2 = await open({ storage: t.ls() });
   assert.equal(t2.$('counter').textContent, '3 / 24');
   assert.equal(t2.word(), t.word());
 });
 
-test('вся колода и "Заново"', async () => {
-  const { $, word } = await open();
-  $('dontknow').click();
-  for (let i = 0; i < 24; i++) $('know').click();
-  assert.equal(word(), 'Готово!');
-  assert.equal($('know').disabled, true);
-  $('restart').click();
-  assert.equal($('counter').textContent, '1 / 24');
-});
-
-test('слова из таблицы: новые добавляются, пройденные сохраняются, слова кэшируются', async () => {
+test('слова из таблицы: новые добавляются в занятие, слова кэшируются для работы без сети', async () => {
   const t = await open();
-  t.$('know').click();
-  const saved = t.dom.window.localStorage.getItem(KEY);
-  const csv = fs.readFileSync(require('path').join(__dirname, 'words.csv'), 'utf8') + '"дверь","door","/dɔː/","«до»"\n';
-  const t2 = await open({ storage: { [KEY]: saved }, sheet: csv });
+  await t.swipe();
+  const csv = fs.readFileSync(path.join(__dirname, 'words.csv'), 'utf8') + '"дверь","door","/dɔː/","«до»","Первый список"\n';
+  const t2 = await open({ storage: t.ls(), sheet: csv });
   assert.equal(t2.$('counter').textContent, '2 / 25');
-  assert.equal(t2.$('status').textContent, '', 'при успешной загрузке внизу пусто');
-  const cached = JSON.parse(t2.dom.window.localStorage.getItem('nnn-words-v2'));
-  assert.equal(cached.length, 25);
-  // без сети: слова из памяти телефона, включая новое
-  const t3 = await open({ storage: { [KEY]: t2.dom.window.localStorage.getItem(KEY), 'nnn-words-v2': JSON.stringify(cached) } });
+  assert.equal(t2.$('status').textContent, '');
+  const cached = t2.w.localStorage.getItem('nnn-words-v2');
+  assert.equal(JSON.parse(cached).length, 25);
+  const t3 = await open({ storage: { ...t2.ls(), 'nnn-words-v2': cached } });
   assert.equal(t3.$('counter').textContent, '2 / 25');
   assert.match(t3.$('status').textContent, /Не удалось обновить/);
-});
-
-test('закрытая таблица не ломает приложение', async () => {
-  const { $, word } = await open({ sheet: '<!DOCTYPE html><html>sign in' });
-  assert.ok(byRu(word()));
-  assert.match($('status').textContent, /Не удалось обновить/);
-});
-
-test('работает без localStorage', async () => {
-  const dom = new JSDOM(html.replace('<script>', '<script>Object.defineProperty(window,"localStorage",{get(){throw new Error("blocked")}});'), {
-    runScripts: 'dangerously', url: 'https://example.test/',
-  });
-  await dom.window.flashcardsReady;
-  const d = dom.window.document;
-  assert.ok(d.getElementById('word').textContent.length > 0);
-  d.getElementById('know').click();
-  assert.equal(d.getElementById('counter').textContent, '2 / 24');
-});
-
-const LISTS_CSV = '"Русский","Английский","Транскрипция","Чтение","Список"\n' +
-  '"очередь","queue","/kjuː/","«кью»","NNN"\n' +
-  '"огромный","huge","","","NNN, Урок 5"\n' +
-  '"дверь","door","","","Урок 5"\n' +
-  '"окно","window","","",""\n';
-
-test('кнопка списка: меню со всеми списками и прогрессом', async () => {
-  const { $, d } = await open({ sheet: LISTS_CSV });
-  assert.equal($('listName').textContent, 'Все слова');
-  assert.equal($('counter').textContent, '1 / 4');
-  $('listBtn').click();
-  assert.equal($('picker').hidden, false);
-  const items = [...d.querySelectorAll('.pick')].map((b) => b.textContent);
-  assert.deepEqual(items, ['Все слова0 / 4', 'NNN0 / 2', 'Урок 50 / 2', 'Без списка0 / 1']);
-});
-
-test('выбор списка показывает только его слова; прогресс у каждого свой', async () => {
-  const t = await open({ sheet: LISTS_CSV });
-  const pick = (name) => { t.$('listBtn').click(); t.d.querySelector('.pick[data-list="' + name + '"]').click(); };
-  pick('Урок 5');
-  assert.equal(t.$('picker').hidden, true);
-  assert.equal(t.$('listName').textContent, 'Урок 5');
-  assert.equal(t.$('counter').textContent, '1 / 2');
-  assert.ok(['огромный', 'дверь'].includes(t.word()));
-  t.$('know').click();
-  assert.equal(t.$('counter').textContent, '2 / 2');
-  pick('NNN');
-  assert.equal(t.$('counter').textContent, '1 / 2', 'у NNN свой прогресс');
-  pick('Урок 5');
-  assert.equal(t.$('counter').textContent, '2 / 2', 'прогресс Урока 5 сохранился');
-  // после перезапуска открывается тот же список с тем же прогрессом
-  const t2 = await open({ storage: { [KEY]: t.dom.window.localStorage.getItem(KEY) }, sheet: LISTS_CSV });
-  assert.equal(t2.$('listName').textContent, 'Урок 5');
-  assert.equal(t2.$('counter').textContent, '2 / 2');
-});
-
-test('если выбранный список удален из таблицы, открываются все слова', async () => {
-  const t = await open({ sheet: LISTS_CSV });
-  t.$('listBtn').click();
-  t.d.querySelector('.pick[data-list="Урок 5"]').click();
-  const noLesson = LISTS_CSV.replace(/Урок 5/g, 'NNN');
-  const t2 = await open({ storage: { [KEY]: t.dom.window.localStorage.getItem(KEY) }, sheet: noLesson });
-  assert.equal(t2.$('listName').textContent, 'Все слова');
-});
-
-test('меню закрывается тапом мимо и клавишей Esc', async () => {
-  const { $, dom } = await open({ sheet: LISTS_CSV });
-  $('listBtn').click();
-  $('picker').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-  assert.equal($('picker').hidden, true);
-  $('listBtn').click();
-  dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape' }));
-  assert.equal($('picker').hidden, true);
-});
-
-test('прогресс прошлой версии переносится во "Все слова"', async () => {
-  const keys = CARDS.map(D.keyOf);
-  const old = JSON.stringify({ v: 2, queue: keys.slice(3), doneKeys: keys.slice(0, 3) });
-  const { $ } = await open({ storage: { 'nnn-flashcards-v2': old } });
-  assert.equal($('counter').textContent, '4 / 24');
 });
 
 test('без интернета внизу ничего не пишется', async () => {
@@ -195,103 +210,116 @@ test('без интернета внизу ничего не пишется', as
   assert.equal(dom.window.document.getElementById('status').textContent, '');
 });
 
+test('закрытая таблица не ломает приложение', async () => {
+  const { $, word } = await open({ sheet: '<!DOCTYPE html><html>sign in' });
+  assert.ok(byRu(word()));
+  assert.match($('status').textContent, /Не удалось обновить/);
+});
+
+test('работает без localStorage', async () => {
+  const dom = new JSDOM(html.replace('<script>', '<script>Object.defineProperty(window,"localStorage",{get(){throw new Error("blocked")}});'), {
+    runScripts: 'dangerously', url: 'https://example.test/',
+  });
+  await dom.window.flashcardsReady;
+  assert.ok(dom.window.document.getElementById('word').textContent.length > 0);
+});
+
 test('тема всегда темная', () => {
   assert.match(html, /color-scheme:dark}/);
   assert.doesNotMatch(html, /prefers-color-scheme/);
 });
 
-test('при возвращении в приложение слова подтягиваются заново, без перезагрузки', async () => {
+const LISTS_CSV = '"Русский","Английский","Транскрипция","Чтение","Список"\n' +
+  '"очередь","queue","/kjuː/","«кью»","NNN"\n' +
+  '"огромный","huge","","","NNN, Урок 5"\n' +
+  '"дверь","door","","","Урок 5"\n' +
+  '"окно","window","","",""\n';
+
+test('меню списков: все списки, выучено / всего', async () => {
+  const t = await open({ sheet: LISTS_CSV });
+  await t.swipe(); // одно слово сразу вспомнил - выучено
+  t.$('listBtn').click();
+  const items = [...t.d.querySelectorAll('.pick')].map((b) => b.textContent);
+  assert.equal(items.length, 4);
+  assert.equal(items[0], 'Все слова1 / 4');
+  assert.deepEqual(items.map((x) => x.replace(/\d.*$/, '')), ['Все слова', 'NNN', 'Урок ', 'Без списка']);
+});
+
+test('выбор списка показывает только его слова; выученное в одном списке выучено и в другом', async () => {
+  const t = await open({ sheet: LISTS_CSV });
+  const pick = (name) => { t.$('listBtn').click(); t.d.querySelector('.pick[data-list="' + name + '"]').click(); };
+  pick('Урок 5');
+  assert.equal(t.$('listName').textContent, 'Урок 5');
+  assert.equal(t.$('counter').textContent, '1 / 2');
+  assert.ok(['огромный', 'дверь'].includes(t.word()));
+  const first = t.word();
+  await t.swipe();
+  pick('NNN');
+  // если вспомнил "огромный" в Уроке 5, в NNN его сегодня уже нет
+  assert.equal(t.$('counter').textContent, first === 'огромный' ? '1 / 1' : '1 / 2');
+  pick('Урок 5');
+  assert.equal(t.$('counter').textContent, '2 / 2', 'занятие Урока 5 продолжается');
+  const t2 = await open({ storage: t.ls(), sheet: LISTS_CSV });
+  assert.equal(t2.$('listName').textContent, 'Урок 5');
+  assert.equal(t2.$('counter').textContent, '2 / 2');
+});
+
+test('если выбранный список удален из таблицы, открываются все слова', async () => {
+  const t = await open({ sheet: LISTS_CSV });
+  t.$('listBtn').click();
+  t.d.querySelector('.pick[data-list="Урок 5"]').click();
+  const t2 = await open({ storage: t.ls(), sheet: LISTS_CSV.replace(/Урок 5/g, 'NNN') });
+  assert.equal(t2.$('listName').textContent, 'Все слова');
+});
+
+test('меню закрывается тапом мимо и клавишей Esc', async () => {
+  const { $, w } = await open({ sheet: LISTS_CSV });
+  $('listBtn').click();
+  $('picker').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  assert.equal($('picker').hidden, true);
+  $('listBtn').click();
+  w.document.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape' }));
+  assert.equal($('picker').hidden, true);
+});
+
+test('при возвращении в приложение слова подтягиваются заново', async () => {
   let csv = '"Русский","Английский","Транскрипция","Чтение","Список"\n"очередь","queue","","","A"\n';
-  const dom = new JSDOM(html, {
-    runScripts: 'dangerously', url: 'https://example.test/',
-    beforeParse(win) {
-      win.fetch = async () => ({ ok: true, status: 200, text: async () => csv });
-      let vis = 'visible';
-      Object.defineProperty(win.document, 'visibilityState', { get: () => vis });
-      win.__setVis = (v) => { vis = v; };
-      win.__now = 1e12;
-      win.Date.now = () => win.__now;
-    },
-  });
-  const w = dom.window, d = w.document;
-  await w.flashcardsReady;
-  assert.equal(d.getElementById('counter').textContent, '1 / 1');
-  // в таблицу добавили слово, приложение свернули и через минуту открыли снова
+  const t = await open({ sheet: () => csv });
+  assert.equal(t.$('counter').textContent, '1 / 1');
   csv += '"дверь","door","","","A"\n';
-  w.__setVis('hidden'); d.dispatchEvent(new w.Event('visibilitychange'));
-  w.__now += 60000;
-  w.__setVis('visible'); d.dispatchEvent(new w.Event('visibilitychange'));
-  await w.flashcardsReady;
-  assert.equal(d.getElementById('counter').textContent, '1 / 2');
+  t.w.__setVis('hidden'); t.d.dispatchEvent(new t.w.Event('visibilitychange'));
+  t.w.__now += 60000;
+  t.w.__setVis('visible'); t.d.dispatchEvent(new t.w.Event('visibilitychange'));
+  await t.w.flashcardsReady;
+  assert.equal(t.$('counter').textContent, '1 / 2');
 });
 
 test('частые переключения не дергают таблицу чаще раза в 20 секунд', async () => {
   let calls = 0;
-  const dom = new JSDOM(html, {
-    runScripts: 'dangerously', url: 'https://example.test/',
-    beforeParse(win) {
-      win.fetch = async () => { calls++; return { ok: true, status: 200, text: async () => '"Русский","Английский"\n"тихо","quietly"\n' }; };
-      Object.defineProperty(win.document, 'visibilityState', { get: () => 'visible' });
-      win.__now = 1e12;
-      win.Date.now = () => win.__now;
-    },
-  });
-  const w = dom.window;
-  await w.flashcardsReady;
-  for (let i = 0; i < 5; i++) { w.__now += 1000; w.document.dispatchEvent(new w.Event('visibilitychange')); }
-  await w.flashcardsReady;
+  const t = await open({ sheet: () => { calls++; return '"Русский","Английский"\n"тихо","quietly"\n'; } });
+  for (let i = 0; i < 5; i++) { t.w.__now += 1000; t.d.dispatchEvent(new t.w.Event('visibilitychange')); }
+  await t.w.flashcardsReady;
   assert.equal(calls, 1);
-  w.__now += 30000; w.document.dispatchEvent(new w.Event('visibilitychange'));
-  await w.flashcardsReady;
+  t.w.__now += 30000; t.d.dispatchEvent(new t.w.Event('visibilitychange'));
+  await t.w.flashcardsReady;
   assert.equal(calls, 2);
 });
 
-const ptr = (w, el, type, x, y = 300) => el.dispatchEvent(new w.MouseEvent(type, { bubbles: true, clientX: x, clientY: y, button: 0 }));
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-test('тап в любое место экрана переворачивает, кроме кнопок', async () => {
-  const { $, d, dom } = await open({ storage: { [KEY]: startWith(5) } }); // невероятно
-  const side = () => $('face').dataset.side;
-  d.querySelector('.card').click();          // поле карточки вокруг слова
-  assert.equal(side(), 'en');
-  d.querySelector('main').click();           // пустое место экрана
-  assert.equal(side(), 'ru');
-  $('status').click();                        // самый низ экрана
-  assert.equal(side(), 'en');
-  $('ipaBtn').click();                        // кнопка транскрипции не переворачивает
-  assert.equal(side(), 'en');
-  assert.equal($('ipaBox').hidden, false);
-  $('ipaBox').click();                        // а тап по самой транскрипции - переворачивает
-  assert.equal(side(), 'ru');
-  $('listBtn').click();                       // кнопка списка и меню не переворачивают
-  d.querySelector('.pick').click();
-  assert.equal(side(), 'ru');
-  $('dontknow').click();
-  assert.equal(side(), 'ru');
-  dom.window.close();
+test('тап сразу после смахивания пальцем переворачивает (жест без click)', async () => {
+  const { $, d, w, ptr } = await open();
+  ptr('pointerdown', 300); ptr('pointermove', 250); ptr('pointermove', 100); ptr('pointerup', 100);
+  await sleep(220); // палец не шлет click после жеста; сразу новый тап
+  ptr('pointerdown', 200); ptr('pointerup', 200);
+  d.querySelector('.card').click();
+  assert.equal($('face').dataset.side, 'en');
 });
 
-test('смахивание влево = "Знаю": следующая карточка, счетчик растет', async () => {
-  const { $, d, dom, word } = await open();
-  const w = dom.window, card = d.querySelector('.card');
-  const first = word();
-  ptr(w, card, 'pointerdown', 300); ptr(w, card, 'pointermove', 250); ptr(w, card, 'pointermove', 120); ptr(w, card, 'pointerup', 120);
-  await sleep(250);
-  assert.equal($('counter').textContent, '2 / 24');
-  assert.notEqual(word(), first);
-  assert.equal($('face').dataset.side, 'ru', 'смахивание не переворачивает карточку');
-  // click, который браузер шлет после жеста, не переворачивает
-  card.click();
-  assert.equal($('face').dataset.side, 'ru');
-});
-
-test('короткое смахивание, вправо или вертикальное - карточка остается', async () => {
-  const { $, d, dom } = await open();
-  const w = dom.window, card = d.querySelector('.card');
-  const go = (x0, x1, y0 = 300, y1 = 300) => { ptr(w, card, 'pointerdown', x0, y0); ptr(w, card, 'pointermove', x1, y1); ptr(w, card, 'pointerup', x1, y1); };
-  go(300, 270); await sleep(250);            // 30 px - мало
-  go(100, 300); await sleep(250);            // вправо
-  go(200, 190, 100, 400); await sleep(250);  // вертикально
-  assert.equal($('counter').textContent, '1 / 24');
-  assert.equal(card.style.transform, '');
+test('тап пальцем переворачивает один раз, даже если следом придет click', async () => {
+  const { $, d, w } = await open();
+  const card = d.querySelector('.card');
+  const pe = (type) => { const e = new w.MouseEvent(type, { bubbles: true, clientX: 200, clientY: 300, button: 0 }); Object.defineProperty(e, 'pointerType', { value: 'touch' }); card.dispatchEvent(e); };
+  pe('pointerdown'); pe('pointerup');
+  assert.equal($('face').dataset.side, 'en', 'перевернулось на отпускании пальца');
+  card.click(); // click от того же тапа
+  assert.equal($('face').dataset.side, 'en', 'и не перевернулось обратно');
 });

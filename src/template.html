@@ -51,7 +51,7 @@ display:flex;flex-direction:column;align-items:center;justify-content:center;gap
 .seg{display:inline-block;white-space:nowrap}
 button{font:600 1rem var(--body);padding:14px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
 button:disabled{opacity:.4;cursor:default}
-#ipaBtn{padding:10px 18px;border-color:var(--accent);color:var(--accent);background:transparent}
+#ipaBtn,#again{padding:10px 18px;border-color:var(--accent);color:var(--accent);background:transparent}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 #know{background:var(--accent);border-color:var(--accent);color:var(--card)}
 #dontknow{color:var(--no);border-color:var(--no)}
@@ -76,17 +76,16 @@ button:disabled{opacity:.4;cursor:default}
     <div id="slot">
       <button id="ipaBtn" type="button" hidden aria-controls="ipaBox" aria-expanded="false">Транскрипция</button>
       <div id="ipaBox" hidden><div id="ipa"></div><div id="read"></div></div>
+      <button id="again" type="button" hidden>Повторить еще раз</button>
     </div>
   </section>
-  <div class="row"><button id="dontknow" type="button">Не знаю</button><button id="know" type="button">Знаю</button></div>
-  <button id="restart" type="button">Заново</button>
   <p id="status" aria-live="polite"></p>
 </main>
 <div id="picker" hidden role="dialog" aria-modal="true" aria-label="Выбор списка">
   <div id="pickerBox"><h2>Список слов</h2><div id="pickerList"></div></div>
 </div>
 <script>
-/*DECK*/
+/*SRS*/
 /*SHEET*/
 /*LISTS*/
 /*CARDS*/
