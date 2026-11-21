@@ -53,17 +53,28 @@
   // --- отрисовка ---
   function setStatus(text) { $('status').textContent = text; }
 
-  // Текст с формами через " - " (be - was - been): перенос строки только между формами,
-  // а не посреди слова или транскрипции.
+  // Перенос строки только по пробелам, никогда посреди слова или транскрипции
+  // (браузер иначе рвет, например, /ˌʌndəˈstænd/ на знаке ударения).
   function setParts(el, text) {
     el.textContent = '';
-    String(text || '').split(' - ').forEach((part, i) => {
-      if (i) el.append(' - ');
+    String(text || '').split(' ').forEach((tok, i) => {
+      if (i) el.append(' ');
       const s = document.createElement('span');
       s.className = 'seg';
-      s.textContent = part;
+      s.textContent = tok;
       el.append(s);
     });
+  }
+
+  // Если отдельное слово все равно шире карточки - уменьшаем шрифт, пока не влезет.
+  function fit(el, maxRem, minRem) {
+    el.style.fontSize = '';
+    if (!el.clientWidth) return; // нет раскладки (тесты без браузера)
+    let size = maxRem;
+    while (el.scrollWidth > el.clientWidth + 1 && size > minRem) {
+      size = Math.round((size - 0.1) * 10) / 10;
+      el.style.fontSize = size + 'rem';
+    }
   }
 
   function render() {
@@ -79,6 +90,7 @@
 
     if (finished) {
       $('face').dataset.side = 'done';
+      $('word').style.fontSize = '';
       $('word').textContent = total ? 'Готово!' : 'Пусто';
       hint.textContent = total ? 'Все ' + total + ' карточек пройдены. Нажмите «Заново».' : 'В этом списке нет слов.';
       hint.hidden = false;
@@ -90,11 +102,13 @@
     hint.hidden = true;
     if (!state.flipped) {
       $('face').dataset.side = 'ru';
-      $('word').textContent = card.ru;
+      setParts($('word'), card.ru);
+      fit($('word'), 2, 1.1);
       ipaBtn.hidden = ipaBox.hidden = true;
     } else {
       $('face').dataset.side = 'en';
       setParts($('word'), card.en);
+      fit($('word'), 2, 1.1);
       const has = Deck.hasIpa(card);
       // по нажатию кнопка исчезает, на ее месте появляется транскрипция
       ipaBtn.hidden = !has || state.ipaShown;
@@ -102,6 +116,7 @@
       ipaBox.hidden = !(has && state.ipaShown);
       setParts($('ipa'), card.ipa);
       setParts($('read'), card.read);
+      if (!ipaBox.hidden) { fit($('ipa'), 1.15, 0.8); fit($('read'), 1.2, 0.8); }
     }
   }
 

@@ -37,7 +37,8 @@ padding:max(64px,env(safe-area-inset-top)) 16px 16px;z-index:10}
 display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px 20px;text-align:center}
 #face{cursor:pointer;width:100%;display:flex;flex-direction:column;align-items:center;gap:10px;padding:12px;border-radius:12px;-webkit-tap-highlight-color:transparent;user-select:none}
 #face:focus-visible,button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
-#word{font:2rem/1.25 var(--display)}
+#word{font:2rem/1.25 var(--display);max-width:100%;overflow-wrap:normal}
+#word,#ipa,#read{width:100%}
 #face[data-side="en"] #word{color:var(--accent);font-weight:700}
 #hint{color:var(--muted);font-size:.85rem}
 /* место под кнопку/транскрипцию всегда зарезервировано, поэтому слово не сдвигается */
