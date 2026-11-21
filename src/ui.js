@@ -159,7 +159,66 @@
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('picker').hidden) hidePicker(); });
 
   // --- карточка ---
-  $('face').addEventListener('click', () => update(Deck.flip(state)));
+  // Переворот - тап в любое место экрана, кроме кнопок (транскрипция, Знаю, Не знаю,
+  // Заново, выбор списка) и открытого меню списков.
+  let suppressClick = false; // после смахивания браузер может прислать click - его игнорируем
+  document.addEventListener('click', (e) => {
+    if (suppressClick) { suppressClick = false; return; }
+    if (!$('picker').hidden || e.target.closest('button, #picker')) return;
+    update(Deck.flip(state));
+  });
+
+  // Смахивание влево = "Знаю": карточка уезжает влево, приходит следующая.
+  const cardEl = document.querySelector('.card');
+  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let sx = null, sy = 0, dragging = false;
+  const threshold = () => Math.max(60, (cardEl.clientWidth || 300) * 0.22);
+
+  function resetDrag() {
+    sx = null; dragging = false;
+    cardEl.classList.remove('dragging');
+    cardEl.style.transform = '';
+  }
+  document.addEventListener('pointerdown', (e) => {
+    if (e.isPrimary === false || e.button > 0) return;
+    if (!$('picker').hidden || Deck.isFinished(state) || e.target.closest('button, #picker')) return;
+    sx = e.clientX; sy = e.clientY; dragging = false;
+  });
+  document.addEventListener('pointermove', (e) => {
+    if (sx === null) return;
+    const dx = e.clientX - sx, dy = e.clientY - sy;
+    if (!dragging && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+      dragging = true;
+      cardEl.classList.add('dragging');
+    }
+    if (dragging) {
+      const x = Math.min(dx, 0) + Math.max(dx, 0) * 0.15; // вправо - только легкая "резинка"
+      cardEl.style.transform = 'translateX(' + x + 'px) rotate(' + x / 40 + 'deg)';
+    }
+  });
+  document.addEventListener('pointerup', (e) => {
+    if (sx === null) return;
+    const dx = e.clientX - sx;
+    const wasDrag = dragging;
+    sx = null; dragging = false;
+    cardEl.classList.remove('dragging');
+    if (!wasDrag) { cardEl.style.transform = ''; return; }
+    suppressClick = true;
+    setTimeout(() => { suppressClick = false; }, 400);
+    if (dx > -threshold()) { cardEl.style.transform = ''; return; } // не дотянули - назад
+    if (reduceMotion) { cardEl.style.transform = ''; update(Deck.know(state)); return; }
+    cardEl.style.transform = 'translateX(-120%) rotate(-8deg)';
+    setTimeout(() => {
+      update(Deck.know(state));
+      cardEl.classList.add('dragging'); // без анимации ставим новую карточку чуть правее
+      cardEl.style.transform = 'translateX(40px)';
+      void cardEl.offsetWidth;
+      cardEl.classList.remove('dragging');
+      cardEl.style.transform = '';
+    }, 180);
+  });
+  document.addEventListener('pointercancel', resetDrag);
+
   $('face').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); update(Deck.flip(state)); }
   });

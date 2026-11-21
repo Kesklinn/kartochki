@@ -245,3 +245,53 @@ test('частые переключения не дергают таблицу �
   await w.flashcardsReady;
   assert.equal(calls, 2);
 });
+
+const ptr = (w, el, type, x, y = 300) => el.dispatchEvent(new w.MouseEvent(type, { bubbles: true, clientX: x, clientY: y, button: 0 }));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+test('тап в любое место экрана переворачивает, кроме кнопок', async () => {
+  const { $, d, dom } = await open({ storage: { [KEY]: startWith(5) } }); // невероятно
+  const side = () => $('face').dataset.side;
+  d.querySelector('.card').click();          // поле карточки вокруг слова
+  assert.equal(side(), 'en');
+  d.querySelector('main').click();           // пустое место экрана
+  assert.equal(side(), 'ru');
+  $('status').click();                        // самый низ экрана
+  assert.equal(side(), 'en');
+  $('ipaBtn').click();                        // кнопка транскрипции не переворачивает
+  assert.equal(side(), 'en');
+  assert.equal($('ipaBox').hidden, false);
+  $('ipaBox').click();                        // а тап по самой транскрипции - переворачивает
+  assert.equal(side(), 'ru');
+  $('listBtn').click();                       // кнопка списка и меню не переворачивают
+  d.querySelector('.pick').click();
+  assert.equal(side(), 'ru');
+  $('dontknow').click();
+  assert.equal(side(), 'ru');
+  dom.window.close();
+});
+
+test('смахивание влево = "Знаю": следующая карточка, счетчик растет', async () => {
+  const { $, d, dom, word } = await open();
+  const w = dom.window, card = d.querySelector('.card');
+  const first = word();
+  ptr(w, card, 'pointerdown', 300); ptr(w, card, 'pointermove', 250); ptr(w, card, 'pointermove', 120); ptr(w, card, 'pointerup', 120);
+  await sleep(250);
+  assert.equal($('counter').textContent, '2 / 24');
+  assert.notEqual(word(), first);
+  assert.equal($('face').dataset.side, 'ru', 'смахивание не переворачивает карточку');
+  // click, который браузер шлет после жеста, не переворачивает
+  card.click();
+  assert.equal($('face').dataset.side, 'ru');
+});
+
+test('короткое смахивание, вправо или вертикальное - карточка остается', async () => {
+  const { $, d, dom } = await open();
+  const w = dom.window, card = d.querySelector('.card');
+  const go = (x0, x1, y0 = 300, y1 = 300) => { ptr(w, card, 'pointerdown', x0, y0); ptr(w, card, 'pointermove', x1, y1); ptr(w, card, 'pointerup', x1, y1); };
+  go(300, 270); await sleep(250);            // 30 px - мало
+  go(100, 300); await sleep(250);            // вправо
+  go(200, 190, 100, 400); await sleep(250);  // вертикально
+  assert.equal($('counter').textContent, '1 / 24');
+  assert.equal(card.style.transform, '');
+});
