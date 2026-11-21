@@ -502,7 +502,7 @@ test('возврат карточки работает и через автоп�
   assert.equal(t.$('mode').textContent, '');
 });
 
-test('выбрал вручную уже выполненный список - тренировка именно его, без перехода', async () => {
+test('вручную выбранный выполненный список - один круг тренировки, потом дальше, не по кругу', async () => {
   const t = await open({ sheet: LISTS_CSV });
   t.$('listBtn').click(); t.d.querySelector('.pick[data-list="__none__"]').click();
   await t.swipe(); // "окно" - список выполнен, автопереход в NNN
@@ -511,4 +511,23 @@ test('выбрал вручную уже выполненный список - �
   assert.equal(t.$('listName').textContent, 'Без списка');
   assert.match(t.$('mode').textContent, /тренировка$/);
   assert.equal(t.word(), 'окно');
+  await t.swipe(); // круг тренировки "Без списка" закончен - в NNN, где еще есть работа
+  assert.equal(t.$('listName').textContent, 'NNN');
+});
+
+test('тренировка одного списка не крутится по кругу: после круга - по всем словам', async () => {
+  const t = await open({ sheet: LISTS_CSV });
+  for (let i = 0; i < 4; i++) await t.swipe(); // план "Все слова" - 4 слова
+  assert.match(t.$('mode').textContent, /по всем словам/);
+  t.$('listBtn').click(); t.d.querySelector('.pick[data-list="Урок 5"]').click();
+  assert.equal(t.$('listName').textContent, 'Урок 5');
+  await t.swipe(); await t.swipe(); // один круг тренировки Урока 5
+  assert.equal(t.$('listName').textContent, 'Все слова', 'дальше не Урок 5 по кругу');
+  assert.match(t.$('mode').textContent, /по всем словам/);
+  // после перезапуска приложения с открытой тренировкой списка - то же самое
+  t.$('listBtn').click(); t.d.querySelector('.pick[data-list="NNN"]').click();
+  const t2 = await open({ storage: t.ls(), sheet: LISTS_CSV });
+  assert.equal(t2.$('listName').textContent, 'NNN');
+  await t2.swipe(); await t2.swipe();
+  assert.equal(t2.$('listName').textContent, 'Все слова');
 });

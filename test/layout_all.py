@@ -90,9 +90,13 @@ with sync_playwright() as p:
         # 3) английские стороны: каждое слово открываем отдельно
         ctx, pg = new_page(b, width)
         pg.goto(URL); ready(pg)  # слова таблицы сохраняются в телефоне до перебора
+        en_of = {k: r[1].strip() for k, r in zip(keys, rows)}
         for key in keys:
-            pg.evaluate(START, key); pg.reload(); ready(pg)
-            tap(pg)
+            for _ in range(3):  # перезагрузка страницы в тесте иногда не успевает подхватить START - повтор
+                pg.evaluate(START, key); pg.reload(); ready(pg)
+                tap(pg)
+                if pg.text_content('#word') == en_of[key]:
+                    break
             r = pg.evaluate(STATE)
             seen_en.add(r['word'])
             if r['side'] != 'en':

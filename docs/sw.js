@@ -1,6 +1,6 @@
 // Service worker: страница и иконки хранятся на телефоне, работают без сети.
 // Слова из таблицы сюда не попадают: их кэширует само приложение.
-const CACHE = 'nnn-cards-c2b4e28afd';
+const CACHE = 'nnn-cards-6e61f14ec2';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', (e) => {
