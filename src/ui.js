@@ -2,7 +2,10 @@
 (function () {
   const PROGRESS_KEY = 'nnn-srs-progress-v1';  // память по каждому слову: уровень и дата повторения
   const SESSIONS_KEY = 'nnn-srs-sessions-v1';  // выбранный список и сегодняшнее занятие по каждому списку
+  const OK_KEY = 'nnn-srs-ok-v1';              // слова, вспомненные сегодня в тренировке слабых
+  const HISTORY_KEY = 'nnn-srs-history-v1';    // последние смахивания - для возврата и после перезапуска
   const WORDS_KEY = 'nnn-words-v2';            // последние слова из таблицы
+  const UNDO_MAX = 20;
   const $ = (id) => document.getElementById(id);
   const now = () => Date.now();
 
@@ -10,12 +13,11 @@
     get(k) { try { return localStorage.getItem(k); } catch { return null; } },
     set(k, v) { try { localStorage.setItem(k, v); } catch {} },
   };
+  const readJson = (k) => { try { return JSON.parse(store.get(k)); } catch { return null; } };
 
   function loadCachedWords() {
-    try {
-      const w = JSON.parse(store.get(WORDS_KEY));
-      if (Array.isArray(w) && w.length && w.every((c) => c && c.ru && c.en && Array.isArray(c.lists))) return w;
-    } catch {}
+    const w = readJson(WORDS_KEY);
+    if (Array.isArray(w) && w.length && w.every((c) => c && c.ru && c.en && Array.isArray(c.lists))) return w;
     return null;
   }
 
@@ -27,77 +29,97 @@
     byKey = new Map(list.map((c) => [Srs.keyOf(c), c]));
   }
   setCards(loadCachedWords() || CARDS);
+  const subsetOf = (name) => Lists.cardsFor(cards, name);
 
   let progress = Srs.restoreProgress(store.get(PROGRESS_KEY));
-  let saved = {};
-  try { saved = JSON.parse(store.get(SESSIONS_KEY)) || {}; } catch {}
+  const saved = readJson(SESSIONS_KEY) || {};
   const sessions = saved.sessions && typeof saved.sessions === 'object' ? saved.sessions : {};
   // preferred - список, выбранный пользователем; listName - открытый сейчас.
   // Они расходятся, пока выбранного списка нет в словах (например, до загрузки таблицы).
   let preferred = typeof saved.current === 'string' ? saved.current : Lists.ALL;
   let listName = preferred;
 
+  const today = () => Srs.dayOf(now());
+  const okSaved = readJson(OK_KEY);
+  let okToday = new Set(okSaved && okSaved.day === today() && Array.isArray(okSaved.keys) ? okSaved.keys : []);
+
+  // История для возврата карточек: [{ state, key, had, rec, list, ok }]. Хранится и в телефоне,
+  // чтобы "назад" работало и после перезапуска приложения (в пределах того же дня).
+  let history = [];
+  const histSaved = readJson(HISTORY_KEY);
+  if (histSaved && histSaved.day === today() && Array.isArray(histSaved.items)) {
+    for (const h of histSaved.items) {
+      const st = h && Srs.restore(h.s);
+      if (st && typeof h.key === 'string' && typeof h.list === 'string') history.push({ ...h, state: st });
+    }
+  }
+
   let state;
-  const UNDO_MAX = 20;
-  let history = []; // для возврата смахнутых карточек: [{ state, key, had, rec }]
-  function openList(name, practice = false) {
-    history = []; // возврат работает только в пределах одного занятия
+  let notice = ''; // подпись о переходе, видна до следующего смахивания
+
+  function sessionFor(name) {
+    const subset = subsetOf(name);
+    const prev = sessions[name] && Srs.restore(sessions[name]);
+    return prev && !Srs.isStale(prev, now())
+      ? Srs.merge(prev, subset, progress, now())
+      : Srs.buildSession(subset, progress, now());
+  }
+
+  function openList(name, { clearHistory = true } = {}) {
+    if (clearHistory) history = []; // при ручном выборе списка возврат начинается заново
     if (!Lists.menuItems(cards).includes(name)) name = Lists.ALL;
     listName = name;
-    const subset = Lists.cardsFor(cards, name);
-    const prev = !practice && sessions[name] && Srs.restore(sessions[name]);
-    state = prev && !Srs.isStale(prev, now())
-      ? Srs.merge(prev, subset, progress, now())
-      : Srs.buildSession(subset, progress, now(), Math.random, practice);
+    state = sessionFor(name);
     keepGoing();
   }
 
-  // Стоп-экрана нет: как только слова по расписанию на сегодня кончились, сразу идет
-  // тренировка - сначала самые трудные слова, круг за кругом. avoid - только что
-  // отвеченное слово, чтобы оно не пошло второй раз подряд.
-  // auto - круг по списку только что закончился смахиванием (план или круг тренировки).
-  // Тогда не крутим этот список заново, а идем туда, где сегодня еще есть работа: в список
-  // с наибольшим числом слов к повторению/новых. Если работы нет нигде - тренировка по всем
-  // словам: сначала забытые, слабые и давно не повторенные. Вручную выбранный выполненный
-  // список проходится одним кругом тренировки, потом - так же дальше.
-  let notice = ''; // подпись о переходе, видна до следующего смахивания
+  // Что показывать, когда в текущем занятии карточки кончились. Стоп-экрана нет:
+  //  1) после смахивания (auto) - в другой список, где на сегодня есть план (новые/к повторению);
+  //  2) тренировка слабых слов: забытые, низкого уровня, со сроком завтра; вспомненное в
+  //     тренировке слово сегодня больше не показывается. Если выбрали список вручную - его слабые,
+  //     иначе - слабые по всем словам;
+  //  3) если и слабых не осталось - карточка "Отлично!" с выбором: все еще раз или другой список.
   function keepGoing(avoid = null, auto = false) {
     if (!Srs.isFinished(state)) return;
-    if (auto && listName !== Lists.ALL) {
-      const done = Lists.label(listName);
+    const from = listName;
+    const fromLabel = Lists.label(from);
+    if (auto && state.practice !== 'all') {
       const next = Lists.menuItems(cards)
-        .filter((n) => n !== Lists.ALL && n !== listName)
-        .map((n) => ({ n, left: Srs.remainingToday(Lists.cardsFor(cards, n), progress, now()) }))
+        .filter((n) => n !== Lists.ALL && n !== from)
+        .map((n) => ({ n, left: Srs.remainingToday(subsetOf(n), progress, now()) }))
         .filter((x) => x.left > 0)
         .sort((a, b) => b.left - a.left)[0];
-      persist();
       if (next) {
+        persist();
         listName = preferred = next.n;
-        const subset = Lists.cardsFor(cards, listName);
-        const prev = sessions[listName] && Srs.restore(sessions[listName]);
-        state = prev && !Srs.isStale(prev, now()) && !prev.practice
-          ? Srs.merge(prev, subset, progress, now())
-          : Srs.buildSession(subset, progress, now());
-        if (!Srs.isFinished(state)) {
-          notice = '✓ «' + done + '» выполнен → «' + Lists.label(listName) + '»';
-          return;
-        }
+        state = sessionFor(next.n);
+        if (!Srs.isFinished(state)) { notice = '✓ «' + fromLabel + '» выполнен → «' + Lists.label(next.n) + '»'; return; }
+        listName = from;
       }
-      listName = preferred = Lists.ALL; // работы нигде нет - тренировка по всем словам
-    } else if (auto) {
-      // круг по всем словам закончился: если в таблицу добавили слова - к ним, иначе новый круг
-      const subset = Lists.cardsFor(cards, Lists.ALL);
-      if (Srs.remainingToday(subset, progress, now()) > 0) { state = Srs.buildSession(subset, progress, now()); return; }
     }
-    const subset = Lists.cardsFor(cards, listName);
-    if (subset.length) state = Srs.buildSession(subset, progress, now(), Math.random, true, avoid);
+    if (state.practice !== 'all') {
+      const weak = (n) => Srs.weakLeft(subsetOf(n), progress, now(), okToday);
+      let target = weak(from) > 0 ? from : auto && weak(Lists.ALL) > 0 ? Lists.ALL : null;
+      if (target) {
+        if (target !== from) { persist(); listName = preferred = target; }
+        state = Srs.buildSession(subsetOf(target), progress, now(), Math.random, 'weak', avoid, okToday);
+        return;
+      }
+    }
+    // работы не осталось: пустая тренировка = карточка "Отлично!"
+    state = Srs.buildSession([], progress, now(), Math.random, state.practice || 'weak');
   }
-  openList(listName);
+  openList(listName, { clearHistory: false });
 
   function persist() {
     sessions[listName] = Srs.serialize(state);
     store.set(SESSIONS_KEY, JSON.stringify({ current: preferred, sessions }));
     store.set(PROGRESS_KEY, JSON.stringify(progress));
+    store.set(OK_KEY, JSON.stringify({ day: today(), keys: [...okToday] }));
+    store.set(HISTORY_KEY, JSON.stringify({
+      day: today(),
+      items: history.map((h) => ({ s: Srs.serialize(h.state), key: h.key, had: h.had, rec: h.rec, list: h.list, ok: h.ok })),
+    }));
   }
 
   // --- отрисовка ---
@@ -129,31 +151,35 @@
 
   function render() {
     $('listName').textContent = Lists.label(listName);
-    const total = state.total;
     const finished = Srs.isFinished(state);
-    $('counter').textContent = (finished ? total : Math.min(state.done + 1, total)) + ' / ' + total;
-    $('fill').style.width = (total ? state.done / total * 100 : 0) + '%';
+    // Счетчик: какое слово из скольких; второе число не растет от забытых слов.
+    // ↻ N - сколько забытых слов сейчас на закреплении (они еще вернутся).
+    $('counter').textContent = Srs.position(state) + ' / ' + state.total;
+    $('relearn').textContent = state.relearning ? '↻ ' + state.relearning : '';
+    $('fill').style.width = (state.total ? state.done / state.total * 100 : 0) + '%';
     $('prev').disabled = !history.length;
     $('next').disabled = finished;
 
     const ipaBtn = $('ipaBtn'), ipaBox = $('ipaBox'), hint = $('hint');
-    // Метка режима: план на сегодня выполнен, дальше тренировка трудных слов.
-    $('mode').textContent = state.practice
-      ? (listName === Lists.ALL ? '✓ План на сегодня выполнен · тренировка по всем словам' : '✓ План на сегодня выполнен · тренировка')
+    $('mode').textContent = state.practice === 'weak' && !finished ? '✓ План на сегодня выполнен · слабые слова'
+      : state.practice === 'all' && !finished ? 'Повтор всех слов списка'
       : notice;
 
-    if (finished) { // сюда попадаем только с пустым списком
+    if (finished) {
       $('face').dataset.side = 'done';
       $('word').style.fontSize = '';
-      $('word').textContent = 'Пусто';
-      hint.textContent = 'В этом списке нет слов.';
+      const empty = !subsetOf(listName).length;
+      $('word').textContent = empty ? 'Пусто' : 'Отлично!';
+      hint.textContent = empty ? 'В этом списке нет слов.' : 'Новые и слабые слова на сегодня закреплены.';
       hint.hidden = false;
       ipaBtn.hidden = ipaBox.hidden = true;
+      $('doneBtns').hidden = false;
+      $('again').hidden = empty;
       $('other').hidden = Lists.menuItems(cards).length < 2;
       return;
     }
 
-    $('other').hidden = true;
+    $('doneBtns').hidden = true;
     hint.hidden = true;
     const card = byKey.get(Srs.current(state));
     if (!state.flipped) {
@@ -183,11 +209,17 @@
   function answer() {
     if (Srs.isFinished(state)) return;
     const key = Srs.current(state);
-    history.push({ state, key, had: key in progress, rec: progress[key], list: listName });
-    if (history.length > UNDO_MAX) history.shift();
+    const entry = { state, key, had: key in progress, rec: progress[key], list: listName, ok: false };
     notice = '';
     const r = Srs.swipe(state, progress, now());
     progress = r.progress;
+    // вспомнил слабое слово в тренировке - сегодня оно больше не нужно
+    if (state.practice === 'weak' && r.recalled && !r.s.queue.includes(key) && !okToday.has(key)) {
+      okToday.add(key);
+      entry.ok = true;
+    }
+    history.push(entry);
+    if (history.length > UNDO_MAX) history.shift();
     state = r.s;
     keepGoing(key, true);
     update(state);
@@ -200,17 +232,18 @@
     if (!h) return false;
     progress = { ...progress };
     if (h.had) progress[h.key] = h.rec; else delete progress[h.key];
+    if (h.ok) okToday.delete(h.key);
     const back = { ...h.state, flipped: false, ipaShown: false };
     notice = '';
     if (h.list !== listName) { persist(); listName = preferred = h.list; } // назад через автопереход
-    update(Srs.merge(back, Lists.cardsFor(cards, listName), progress)); // слова могли обновиться
+    update(Srs.merge(back, subsetOf(listName), progress)); // слова могли обновиться
     return true;
   }
 
   // --- выбор списка ---
   // В меню: сколько слов списка еще ждут сегодня ("✓" - план выполнен).
   function todayOf(name) {
-    const n = Srs.remainingToday(Lists.cardsFor(cards, name), progress, now());
+    const n = Srs.remainingToday(subsetOf(name), progress, now());
     return n ? 'еще ' + n : '✓';
   }
 
@@ -218,7 +251,6 @@
     const box = $('pickerList');
     box.textContent = '';
     for (const name of Lists.menuItems(cards)) {
-
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'pick' + (name === listName ? ' current' : '');
@@ -226,7 +258,7 @@
       const t = document.createElement('span'); t.textContent = Lists.label(name);
       const n = document.createElement('span'); n.className = 'cnt'; n.textContent = todayOf(name);
       b.append(t, n);
-      b.addEventListener('click', () => { hidePicker(); persist(); preferred = name; openList(name); persist(); render(); });
+      b.addEventListener('click', () => { hidePicker(); persist(); preferred = name; notice = ''; openList(name); persist(); render(); });
       box.append(b);
     }
     $('picker').hidden = false;
@@ -254,8 +286,7 @@
   });
 
   // --- карточка ---
-  // Переворот - тап в любое место экрана, кроме кнопок (транскрипция, выбор списка,
-  // "Повторить еще раз") и открытого меню списков.
+  // Переворот - тап в любое место экрана, кроме кнопок и открытого меню списков.
   // Тап пальцем обрабатываем сами на pointerup: Chrome на телефоне иногда не присылает click
   // для тапа, сделанного сразу после смахивания. click остается для мыши/клавиатуры,
   // а click, пришедший вслед за уже обработанным тапом или жестом, игнорируется.
@@ -309,7 +340,7 @@
     if (e.isPrimary === false || e.button > 0) return;
     if (!flippable(e.target)) return;
     tapStart = { x: e.clientX, y: e.clientY, t: Date.now() };
-    sx = e.clientX; sy = e.clientY; dragging = false; // на экране "на сегодня все" - только вправо, назад
+    sx = e.clientX; sy = e.clientY; dragging = false; // на карточке "Отлично!" - только вправо, назад
   });
   document.addEventListener('pointermove', (e) => {
     if (sx === null) return;
@@ -352,8 +383,11 @@
     if (e.key === 'Enter') { e.preventDefault(); update(Srs.flip(state)); }
   });
   $('ipaBtn').addEventListener('click', () => update(Srs.toggleIpa(state)));
-  // На экране "на сегодня все": пройти список еще раз. Расписание раньше срока не сдвигается,
-  // а забытые слова снова попадают на доучивание.
+  // Карточка "Отлично!": пройти все слова списка еще раз или выбрать другой список.
+  $('again').addEventListener('click', () => {
+    notice = '';
+    update(Srs.buildSession(subsetOf(listName), progress, now(), Math.random, 'all'));
+  });
   $('other').addEventListener('click', () => showPicker());
 
   persist();
@@ -368,9 +402,9 @@
       const items = Lists.menuItems(cards);
       if (listName !== preferred && items.includes(preferred)) {
         persist();
-        openList(preferred); // выбранный список появился после загрузки таблицы
+        openList(preferred, { clearHistory: false }); // выбранный список появился после загрузки таблицы
       } else if (items.includes(listName)) {
-        const subset = Lists.cardsFor(cards, listName);
+        const subset = subsetOf(listName);
         if (state.practice && Srs.hasNew(subset, progress)) {
           // в таблицу добавили слова - из тренировки возвращаемся к плану на сегодня
           state = Srs.buildSession(subset, progress, now());
@@ -392,9 +426,10 @@
     }
   }
 
-  // Наступил новый день - собираем новое занятие: подошли сроки повторений.
+  // Наступил новый день - новый план: подошли сроки повторений. Вчерашняя история и
+  // вчерашние "вспомнил в тренировке" больше не действуют.
   function rollDay() {
-    if (Srs.isStale(state, now())) { openList(listName); persist(); render(); }
+    if (Srs.isStale(state, now())) { okToday = new Set(); notice = ''; openList(listName); persist(); render(); }
   }
 
   // Установленное приложение Android не перезагружает страницу, когда его снова

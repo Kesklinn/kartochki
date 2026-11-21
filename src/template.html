@@ -32,6 +32,8 @@ padding:max(64px,env(safe-area-inset-top)) 16px 16px;z-index:10}
 .pick.current{background:var(--bg);color:var(--accent)}
 .pick .cnt{color:var(--muted);font-weight:500;font-variant-numeric:tabular-nums;font-size:.9rem}
 #counter{color:var(--muted);font-weight:600;font-variant-numeric:tabular-nums}
+.counterbox{display:flex;align-items:baseline;gap:8px;white-space:nowrap}
+#relearn{color:#e3a35c;font-weight:600;font-size:.85rem;font-variant-numeric:tabular-nums}
 .bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden}
 .bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
 .card{transition:transform .18s ease-out;will-change:transform;
@@ -39,7 +41,7 @@ flex:1;min-height:320px;background:var(--card);border:1px solid var(--line);bord
 display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px 20px;text-align:center}
 /* стрелки по бокам слова - только на компьютере (мышь), на телефоне листают смахиванием */
 .wordrow{display:flex;align-items:center;width:100%;gap:6px}
-.nav{display:none;flex:none;width:44px;height:44px;padding:0;border-radius:50%;font:400 1.9rem/1 var(--body);
+.nav{display:none;flex:none;width:44px;height:44px;padding:0;border-radius:50%;
 color:var(--muted);background:transparent;border:1px solid var(--line);align-items:center;justify-content:center}
 .nav:hover:not(:disabled){color:var(--accent);border-color:var(--accent)}
 .nav:disabled{opacity:.25;cursor:default}
@@ -58,7 +60,8 @@ color:var(--muted);background:transparent;border:1px solid var(--line);align-ite
 .seg{display:inline-block;white-space:nowrap}
 button{font:600 1rem var(--body);padding:14px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
 button:disabled{opacity:.4;cursor:default}
-#ipaBtn,#other{padding:10px 18px;border-color:var(--accent);color:var(--accent);background:transparent}
+#doneBtns{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
+#ipaBtn,#again,#other{padding:10px 18px;border-color:var(--accent);color:var(--accent);background:transparent}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 #know{background:var(--accent);border-color:var(--accent);color:var(--card)}
 #dontknow{color:var(--no);border-color:var(--no)}
@@ -73,23 +76,26 @@ button:disabled{opacity:.4;cursor:default}
 <main>
   <header>
     <button id="listBtn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="picker"><span id="listName"></span><span class="arr" aria-hidden="true">▼</span></button>
-    <span id="counter">1 / 1</span>
+    <span class="counterbox"><span id="relearn" title="Забытые слова на закреплении"></span><span id="counter">1 / 1</span></span>
   </header>
   <div class="bar"><i id="fill"></i></div>
   <div id="mode" aria-live="polite"></div>
   <section class="card">
     <div class="wordrow">
-      <button id="prev" class="nav" type="button" aria-label="Предыдущая карточка" title="Предыдущая карточка (←)">‹</button>
+      <button id="prev" class="nav" type="button" aria-label="Предыдущая карточка" title="Предыдущая карточка (←)"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M15.5 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <div id="face" role="button" tabindex="0" aria-live="polite" data-side="ru">
         <div id="word"></div>
         <div id="hint"></div>
       </div>
-      <button id="next" class="nav" type="button" aria-label="Следующая карточка" title="Следующая карточка (→)">›</button>
+      <button id="next" class="nav" type="button" aria-label="Следующая карточка" title="Следующая карточка (→)"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M8.5 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     </div>
     <div id="slot">
       <button id="ipaBtn" type="button" hidden aria-controls="ipaBox" aria-expanded="false">Транскрипция</button>
       <div id="ipaBox" hidden><div id="ipa"></div><div id="read"></div></div>
-      <button id="other" type="button" hidden>Другой список</button>
+      <div id="doneBtns" hidden>
+        <button id="again" type="button">Повторить все еще раз</button>
+        <button id="other" type="button">Другой список</button>
+      </div>
     </div>
   </section>
   <p id="status" aria-live="polite"></p>

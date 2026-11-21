@@ -71,7 +71,7 @@ with sync_playwright() as p:
         pg.wait_for_function("document.getElementById('counter').textContent.endsWith('/ %d')" % n_words)
         for _ in range(n_words + 5):
             r = pg.evaluate(STATE)
-            if pg.text_content('#mode'):  # план выполнен - началась тренировка
+            if pg.text_content('#mode') or r['word'] == 'Отлично!':  # план выполнен
                 break
             seen_ru.add(r['word'])
             if r['over']:
