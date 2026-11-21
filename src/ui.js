@@ -53,6 +53,19 @@
   // --- отрисовка ---
   function setStatus(text) { $('status').textContent = text; }
 
+  // Текст с формами через " - " (be - was - been): перенос строки только между формами,
+  // а не посреди слова или транскрипции.
+  function setParts(el, text) {
+    el.textContent = '';
+    String(text || '').split(' - ').forEach((part, i) => {
+      if (i) el.append(' - ');
+      const s = document.createElement('span');
+      s.className = 'seg';
+      s.textContent = part;
+      el.append(s);
+    });
+  }
+
   function render() {
     $('listName').textContent = Lists.label(listName);
     const total = Deck.total(state);
@@ -81,14 +94,14 @@
       ipaBtn.hidden = ipaBox.hidden = true;
     } else {
       $('face').dataset.side = 'en';
-      $('word').textContent = card.en;
+      setParts($('word'), card.en);
       const has = Deck.hasIpa(card);
       // по нажатию кнопка исчезает, на ее месте появляется транскрипция
       ipaBtn.hidden = !has || state.ipaShown;
       ipaBtn.setAttribute('aria-expanded', String(state.ipaShown));
       ipaBox.hidden = !(has && state.ipaShown);
-      $('ipa').textContent = card.ipa || '';
-      $('read').textContent = card.read || '';
+      setParts($('ipa'), card.ipa);
+      setParts($('read'), card.read);
     }
   }
 

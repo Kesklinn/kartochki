@@ -41,10 +41,11 @@ display:flex;flex-direction:column;align-items:center;justify-content:center;gap
 #face[data-side="en"] #word{color:var(--accent);font-weight:700}
 #hint{color:var(--muted);font-size:.85rem}
 /* место под кнопку/транскрипцию всегда зарезервировано, поэтому слово не сдвигается */
-#slot{height:76px;display:flex;align-items:flex-start;justify-content:center}
+#slot{height:112px;display:flex;align-items:flex-start;justify-content:center}
 #ipaBox{display:flex;flex-direction:column;gap:6px}
 #ipa{color:var(--muted);font-size:1.15rem}
 #read{font-size:1.2rem}
+.seg{display:inline-block;white-space:nowrap}
 button{font:600 1rem var(--body);padding:14px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
 button:disabled{opacity:.4;cursor:default}
 #ipaBtn{padding:10px 18px;border-color:var(--accent);color:var(--accent);background:transparent}
@@ -348,6 +349,19 @@ const CARDS = [
   // --- отрисовка ---
   function setStatus(text) { $('status').textContent = text; }
 
+  // Текст с формами через " - " (be - was - been): перенос строки только между формами,
+  // а не посреди слова или транскрипции.
+  function setParts(el, text) {
+    el.textContent = '';
+    String(text || '').split(' - ').forEach((part, i) => {
+      if (i) el.append(' - ');
+      const s = document.createElement('span');
+      s.className = 'seg';
+      s.textContent = part;
+      el.append(s);
+    });
+  }
+
   function render() {
     $('listName').textContent = Lists.label(listName);
     const total = Deck.total(state);
@@ -376,14 +390,14 @@ const CARDS = [
       ipaBtn.hidden = ipaBox.hidden = true;
     } else {
       $('face').dataset.side = 'en';
-      $('word').textContent = card.en;
+      setParts($('word'), card.en);
       const has = Deck.hasIpa(card);
       // по нажатию кнопка исчезает, на ее месте появляется транскрипция
       ipaBtn.hidden = !has || state.ipaShown;
       ipaBtn.setAttribute('aria-expanded', String(state.ipaShown));
       ipaBox.hidden = !(has && state.ipaShown);
-      $('ipa').textContent = card.ipa || '';
-      $('read').textContent = card.read || '';
+      setParts($('ipa'), card.ipa);
+      setParts($('read'), card.read);
     }
   }
 
