@@ -257,8 +257,9 @@ test('выбор списка показывает только его слов�
   const first = t.word();
   await t.swipe();
   pick('NNN');
-  // если вспомнил "огромный" в Уроке 5, в NNN его сегодня уже нет
-  assert.equal(t.$('counter').textContent, first === 'огромный' ? '1 / 1' : '1 / 2');
+  // если вспомнил "огромный" в Уроке 5, в NNN он сегодня уже засчитан и не показывается
+  assert.equal(t.$('counter').textContent, first === 'огромный' ? '2 / 2' : '1 / 2');
+  if (first === 'огромный') assert.equal(t.word(), 'очередь');
   pick('Урок 5');
   assert.equal(t.$('counter').textContent, '2 / 2', 'занятие Урока 5 продолжается');
   const t2 = await open({ storage: t.ls(), sheet: LISTS_CSV });

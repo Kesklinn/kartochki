@@ -47,7 +47,7 @@
     const subset = Lists.cardsFor(cards, name);
     const prev = !practice && sessions[name] && Srs.restore(sessions[name]);
     state = prev && !Srs.isStale(prev, now())
-      ? Srs.merge(prev, subset, progress)
+      ? Srs.merge(prev, subset, progress, now())
       : Srs.buildSession(subset, progress, now(), Math.random, practice);
   }
   openList(listName);
@@ -343,7 +343,7 @@
         persist();
         openList(preferred); // выбранный список появился после загрузки таблицы
       } else if (items.includes(listName)) {
-        state = Srs.merge(state, Lists.cardsFor(cards, listName), progress);
+        state = Srs.merge(state, Lists.cardsFor(cards, listName), progress, now());
       } else {
         openList(Lists.ALL); // выбранный список исчез из таблицы
       }

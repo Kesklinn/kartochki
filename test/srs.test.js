@@ -164,3 +164,36 @@ test('сохранение занятия и прогресса', () => {
   assert.equal(S.restore(JSON.stringify({ v: 2, queue: [], doneKeys: [] })), null, 'старый формат не подходит');
   assert.deepEqual(S.restoreProgress('мусор'), {});
 });
+
+test('слова, отвеченные сегодня в другом списке, засчитываются: счетчик показывает весь объем дня', () => {
+  const words = mk('a', 'b', 'c', 'd');
+  // в "Все слова" сегодня ответили a (помню) и b (не помню, доучено)
+  let s = S.buildSession(mk('a', 'b'), {}, T0, noShuffle);
+  let p = {};
+  ({ s, progress: p } = swipeKnown(s, p, T0));
+  ({ s, progress: p } = swipeForgot(s, p, T0));
+  ({ s, progress: p } = swipeKnown(s, p, T0));
+  ({ s, progress: p } = swipeKnown(s, p, T0));
+  assert.ok(S.isFinished(s));
+  // открыли список из четырех слов в тот же день
+  const v = S.buildSession(words, p, T0 + 3600e3, noShuffle);
+  assert.equal(v.total, 4);
+  assert.equal(v.done, 2, 'a и b уже пройдены сегодня');
+  assert.deepEqual(v.queue, [K('c'), K('d')]);
+  // на следующий день прошлые ответы уже не считаются "сегодняшними"
+  const n = S.buildSession(words, p, T0 + S.DAY, noShuffle);
+  assert.equal(n.done, 0);
+  assert.deepEqual(n.queue, [K('b'), K('c'), K('d')], 'b - на повторение (1 день), a - через 3 дня');
+});
+
+test('вернулся к начатому списку: слова, отвеченные тем временем в другом списке, не повторяются', () => {
+  const words = mk('a', 'b', 'c');
+  const list = S.buildSession(words, {}, T0, noShuffle); // начал список, ничего не ответил
+  let all = S.buildSession(words, {}, T0, noShuffle);    // ушел во "Все слова"
+  let p = {};
+  ({ s: all, progress: p } = swipeKnown(all, p, T0));    // ответил a
+  const back = S.merge(S.restore(S.serialize(list)), words, p, T0 + 60e3);
+  assert.equal(back.queue.includes(K('a')), false);
+  assert.equal(back.done, 1);
+  assert.equal(back.total, 3);
+});

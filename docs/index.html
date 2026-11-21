@@ -154,6 +154,8 @@ function uniqueKeys(cards) {
 }
 
 const isDue = (p, now) => Boolean(p) && p.due <= endOfDay(now);
+// Слово сегодня уже отвечено и до следующего повторения не нужно.
+const answeredToday = (p, now) => Boolean(p) && Boolean(p.last) && dayOf(p.last) === dayOf(now) && !isDue(p, now);
 
 // Занятие на сегодня: сначала слова, срок которых подошел (самые просроченные первыми),
 // потом новые в случайном порядке. В режиме practice - все слова списка.
@@ -167,7 +169,10 @@ function buildSession(cards, progress, now, rng = Math.random, practice = false)
     const fresh = shuffle(keys.filter((k) => !progress[k]), rng);
     queue = [...due, ...fresh];
   }
-  return { day: dayOf(now), practice, queue, steps: {}, total: queue.length, done: 0, flipped: false, ipaShown: false, revealed: false };
+  // Слова этого списка, которые сегодня уже отвечены (здесь или в другом списке), сразу
+  // считаем пройденными: счетчик показывает весь сегодняшний объем, а не только остаток.
+  const doneToday = practice ? 0 : keys.filter((k) => answeredToday(progress[k], now)).length;
+  return { day: dayOf(now), practice, queue, steps: {}, total: queue.length + doneToday, done: doneToday, flipped: false, ipaShown: false, revealed: false };
 }
 
 const current = (s) => (s.queue.length ? s.queue[0] : null);
@@ -196,7 +201,7 @@ function swipe(s, progress, now) {
   const base = { flipped: false, ipaShown: false, revealed: false };
 
   const finish = (rec) => {
-    if (rec) next[key] = rec;
+    if (rec) next[key] = { ...rec, last: now };
     delete steps[key];
     return { s: { ...s, ...base, queue: rest, steps, done: s.done + 1 }, progress: next };
   };
@@ -210,7 +215,7 @@ function swipe(s, progress, now) {
   if (!remembered) {
     // не вспомнил: сброс уровня и доучивание с первого шага
     const lapse = p && !(key in steps) ? 1 : 0; // повторный провал на шаге доучивания - не новый провал
-    next[key] = { lvl: 0, due: now, lapses: ((p && p.lapses) || 0) + lapse };
+    next[key] = { lvl: 0, due: now, lapses: ((p && p.lapses) || 0) + lapse, last: now };
     return requeue(0);
   }
 
@@ -227,11 +232,15 @@ function swipe(s, progress, now) {
 }
 
 // Подстраивает занятие под новый список слов: удаленные убираем, новые добавляем в конец.
-function merge(s, cards, progress) {
+// Если передан now: слова, на которые сегодня уже ответили в другом списке, из очереди
+// убираются и засчитываются как пройденные (иначе они показались бы второй раз).
+function merge(s, cards, progress, now) {
   const keys = uniqueKeys(cards);
   const has = new Set(keys);
-  const queue = s.queue.filter((k) => has.has(k));
-  const removed = s.queue.length - queue.length;
+  const kept = s.queue.filter((k) => has.has(k));
+  const removed = s.queue.length - kept.length;
+  const handled = now === undefined || s.practice ? [] : kept.filter((k) => !(k in s.steps) && answeredToday(progress[k], now));
+  const queue = kept.filter((k) => !handled.includes(k));
   const added = s.practice ? [] : keys.filter((k) => !progress[k] && !queue.includes(k));
   const steps = {};
   for (const k of Object.keys(s.steps)) if (has.has(k)) steps[k] = s.steps[k];
@@ -240,7 +249,8 @@ function merge(s, cards, progress) {
     ...s,
     queue: [...queue, ...added],
     steps,
-    total: Math.max(s.done + queue.length + added.length, s.total - removed + added.length),
+    done: s.done + handled.length,
+    total: Math.max(s.done + handled.length + queue.length + added.length, s.total - removed + added.length),
     flipped: sameFront && s.flipped,
     ipaShown: sameFront && s.ipaShown,
     revealed: sameFront && s.revealed,
@@ -294,7 +304,10 @@ function restoreProgress(raw) {
     if (!o || typeof o !== 'object') return {};
     const out = {};
     for (const [k, p] of Object.entries(o)) {
-      if (p && Number.isFinite(p.due) && Number.isInteger(p.lvl)) out[k] = { lvl: p.lvl, due: p.due, lapses: p.lapses | 0 };
+      if (p && Number.isFinite(p.due) && Number.isInteger(p.lvl)) {
+        out[k] = { lvl: p.lvl, due: p.due, lapses: p.lapses | 0 };
+        if (Number.isFinite(p.last)) out[k].last = p.last;
+      }
     }
     return out;
   } catch {
@@ -474,7 +487,7 @@ const CARDS = [
     const subset = Lists.cardsFor(cards, name);
     const prev = !practice && sessions[name] && Srs.restore(sessions[name]);
     state = prev && !Srs.isStale(prev, now())
-      ? Srs.merge(prev, subset, progress)
+      ? Srs.merge(prev, subset, progress, now())
       : Srs.buildSession(subset, progress, now(), Math.random, practice);
   }
   openList(listName);
@@ -770,7 +783,7 @@ const CARDS = [
         persist();
         openList(preferred); // выбранный список появился после загрузки таблицы
       } else if (items.includes(listName)) {
-        state = Srs.merge(state, Lists.cardsFor(cards, listName), progress);
+        state = Srs.merge(state, Lists.cardsFor(cards, listName), progress, now());
       } else {
         openList(Lists.ALL); // выбранный список исчез из таблицы
       }
