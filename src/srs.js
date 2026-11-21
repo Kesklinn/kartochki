@@ -58,13 +58,14 @@ const isDue = (p, now) => Boolean(p) && p.due <= endOfDay(now);
 // Слово сегодня уже отвечено и до следующего повторения не нужно.
 const answeredToday = (p, now) => Boolean(p) && Boolean(p.last) && dayOf(p.last) === dayOf(now) && !isDue(p, now);
 
-// Насколько слово трудное: чем меньше уровень, чем чаще забывали и чем ближе срок -
-// тем раньше оно в тренировке. Новые слова (без истории) - как самые трудные.
+// Насколько слово трудное: чем меньше уровень, чем чаще забывали, чем ближе срок и чем
+// дольше его не повторяли - тем раньше оно в тренировке. Новые слова - как самые трудные.
 function difficultyOrder(keys, progress, now, rng = Math.random) {
   const score = (k) => {
     const p = progress[k];
     if (!p) return -1e9;
-    return p.lvl * 100 - (p.lapses || 0) * 40 + Math.max(0, (p.due - now) / DAY);
+    const idle = Math.min(60, (now - (p.last || 0)) / DAY); // давно не повторяли - раньше
+    return p.lvl * 100 - (p.lapses || 0) * 40 + Math.max(0, (p.due - now) / DAY) - idle * 3;
   };
   return shuffle(keys, rng).sort((a, b) => score(a) - score(b)); // shuffle - случайный порядок среди равных
 }

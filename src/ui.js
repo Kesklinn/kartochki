@@ -55,8 +55,35 @@
   // Стоп-экрана нет: как только слова по расписанию на сегодня кончились, сразу идет
   // тренировка - сначала самые трудные слова, круг за кругом. avoid - только что
   // отвеченное слово, чтобы оно не пошло второй раз подряд.
-  function keepGoing(avoid = null) {
+  // auto - список только что закончился смахиванием. Тогда не крутим его по кругу, а идем туда,
+  // где сегодня еще есть работа: в список с наибольшим числом слов к повторению/новых.
+  // Если работы нет нигде - тренировка по всем словам: сначала забытые, слабые и давно
+  // не повторенные. Если же список выбран вручную и уже выполнен - тренируем именно его.
+  let notice = ''; // подпись о переходе, видна до следующего смахивания
+  function keepGoing(avoid = null, auto = false) {
     if (!Srs.isFinished(state)) return;
+    if (auto && !state.practice) {
+      const done = Lists.label(listName);
+      const next = Lists.menuItems(cards)
+        .filter((n) => n !== Lists.ALL && n !== listName)
+        .map((n) => ({ n, left: Srs.remainingToday(Lists.cardsFor(cards, n), progress, now()) }))
+        .filter((x) => x.left > 0)
+        .sort((a, b) => b.left - a.left)[0];
+      persist();
+      if (next) {
+        listName = preferred = next.n;
+        const subset = Lists.cardsFor(cards, listName);
+        const prev = sessions[listName] && Srs.restore(sessions[listName]);
+        state = prev && !Srs.isStale(prev, now()) && !prev.practice
+          ? Srs.merge(prev, subset, progress, now())
+          : Srs.buildSession(subset, progress, now());
+        if (!Srs.isFinished(state)) {
+          notice = '✓ «' + done + '» выполнен → «' + Lists.label(listName) + '»';
+          return;
+        }
+      }
+      listName = preferred = Lists.ALL;
+    }
     const subset = Lists.cardsFor(cards, listName);
     if (subset.length) state = Srs.buildSession(subset, progress, now(), Math.random, true, avoid);
   }
@@ -106,7 +133,9 @@
 
     const ipaBtn = $('ipaBtn'), ipaBox = $('ipaBox'), hint = $('hint');
     // Метка режима: план на сегодня выполнен, дальше тренировка трудных слов.
-    $('mode').textContent = state.practice ? '✓ План на сегодня выполнен · тренировка' : '';
+    $('mode').textContent = state.practice
+      ? (listName === Lists.ALL ? '✓ План на сегодня выполнен · тренировка по всем словам' : '✓ План на сегодня выполнен · тренировка')
+      : notice;
 
     if (finished) { // сюда попадаем только с пустым списком
       $('face').dataset.side = 'done';
@@ -149,12 +178,13 @@
   function answer() {
     if (Srs.isFinished(state)) return;
     const key = Srs.current(state);
-    history.push({ state, key, had: key in progress, rec: progress[key] });
+    history.push({ state, key, had: key in progress, rec: progress[key], list: listName });
     if (history.length > UNDO_MAX) history.shift();
+    notice = '';
     const r = Srs.swipe(state, progress, now());
     progress = r.progress;
     state = r.s;
-    keepGoing(key);
+    keepGoing(key, true);
     update(state);
   }
 
@@ -166,6 +196,8 @@
     progress = { ...progress };
     if (h.had) progress[h.key] = h.rec; else delete progress[h.key];
     const back = { ...h.state, flipped: false, ipaShown: false };
+    notice = '';
+    if (h.list !== listName) { persist(); listName = preferred = h.list; } // назад через автопереход
     update(Srs.merge(back, Lists.cardsFor(cards, listName), progress)); // слова могли обновиться
     return true;
   }

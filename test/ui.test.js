@@ -471,3 +471,44 @@ test('добавили слова в таблицу во время тренир
   assert.equal(t.$('mode').textContent, '');
   assert.equal(t.word(), 'окно');
 });
+
+test('список выполнен - автоматически следующий список, где сегодня есть работа', async () => {
+  const t = await open({ sheet: LISTS_CSV });
+  t.$('listBtn').click(); t.d.querySelector('.pick[data-list="Урок 5"]').click();
+  await t.swipe(); await t.swipe(); // огромный, дверь
+  assert.equal(t.$('listName').textContent, 'NNN', 'перешли в список, где еще есть слова');
+  assert.match(t.$('mode').textContent, /«Урок 5» выполнен → «NNN»/);
+  assert.equal(t.word(), 'очередь', '"огромный" уже ответили в Уроке 5 - его не повторяем');
+  await t.swipe();
+  assert.equal(t.$('listName').textContent, 'Без списка');
+  assert.equal(t.word(), 'окно');
+  await t.swipe();
+  // работы нигде не осталось - тренировка по всем словам, а не по кругу одного списка
+  assert.equal(t.$('listName').textContent, 'Все слова');
+  assert.match(t.$('mode').textContent, /тренировка по всем словам/);
+  // приложение запомнило, где мы сейчас
+  const t2 = await open({ storage: t.ls(), sheet: LISTS_CSV });
+  assert.equal(t2.$('listName').textContent, 'Все слова');
+});
+
+test('возврат карточки работает и через автопереход между списками', async () => {
+  const t = await open({ sheet: LISTS_CSV });
+  t.$('listBtn').click(); t.d.querySelector('.pick[data-list="Урок 5"]').click();
+  await t.swipe(); const last = t.word(); await t.swipe();
+  assert.equal(t.$('listName').textContent, 'NNN');
+  await swipeTo(t, +150);
+  assert.equal(t.$('listName').textContent, 'Урок 5');
+  assert.equal(t.word(), last);
+  assert.equal(t.$('mode').textContent, '');
+});
+
+test('выбрал вручную уже выполненный список - тренировка именно его, без перехода', async () => {
+  const t = await open({ sheet: LISTS_CSV });
+  t.$('listBtn').click(); t.d.querySelector('.pick[data-list="__none__"]').click();
+  await t.swipe(); // "окно" - список выполнен, автопереход в NNN
+  assert.equal(t.$('listName').textContent, 'NNN');
+  t.$('listBtn').click(); t.d.querySelector('.pick[data-list="__none__"]').click();
+  assert.equal(t.$('listName').textContent, 'Без списка');
+  assert.match(t.$('mode').textContent, /тренировка$/);
+  assert.equal(t.word(), 'окно');
+});

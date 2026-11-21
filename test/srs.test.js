@@ -235,3 +235,12 @@ test('счетчик растет на каждом смахивании, даж
   assert.equal(s.total, s.done, 'в конце счетчик сошелся: N / N');
   assert.ok(s.done > 20, 'забытые слова добавили повторы');
 });
+
+test('тренировка: при равной трудности раньше то, что дольше не повторяли', () => {
+  const p = {
+    [K('fresh')]: { lvl: 2, due: T0 + 3 * DAY, lapses: 0, last: T0 - 3600e3 },
+    [K('old')]: { lvl: 2, due: T0 + 3 * DAY, lapses: 0, last: T0 - 20 * DAY },
+  };
+  const s = S.buildSession(mk('fresh', 'old'), p, T0, Math.random, true);
+  assert.deepEqual(s.queue, [K('old'), K('fresh')]);
+});
